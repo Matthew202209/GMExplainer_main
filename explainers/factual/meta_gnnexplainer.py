@@ -1,5 +1,5 @@
 """
-Modified based on torch_geometric.nn.models.GNNExplainer
+Modified based on torch_geometric.nn.predictionModels.GNNExplainer
 which generates explainations in node prediction tasks.
 
 Citation:
