@@ -9,11 +9,12 @@ from torch_geometric.nn import DenseGCNConv, DenseGraphConv
 
 device = torch.device("cpu")
 
+
 class Graph_pred_model(nn.Module):
     def __init__(self, x_dim, h_dim, n_out, max_num_nodes, dataset='synthetic'):
         super(Graph_pred_model, self).__init__()
         self.num_graph_models = 3
-        self.dataset= dataset
+        self.dataset = dataset
         self.graph_model = [DenseGraphConv(x_dim, h_dim) for i in range(self.num_graph_models)]
         # self.graph_pool_type = 'mean'
         self.encoder = nn.Sequential(nn.Linear(2 * h_dim, h_dim), nn.BatchNorm1d(h_dim), nn.ReLU())
@@ -24,7 +25,7 @@ class Graph_pred_model(nn.Module):
 
     def graph_pooling(self, x, type='mean', mask=None):
         if mask is not None:
-            mask_feat = mask.unsqueeze(-1).repeat(1,1,x.shape[-1])  # batchsize x max_num_node x dim_z
+            mask_feat = mask.unsqueeze(-1).repeat(1, 1, x.shape[-1])  # batchsize x max_num_node x dim_z
             x = x * mask_feat
         if type == 'max':
             out, _ = torch.max(x, dim=1, keepdim=False)  # dim: the dimension of num_node
@@ -43,13 +44,14 @@ class Graph_pred_model(nn.Module):
             x[:, :, 0] = 0.
 
         mask = torch.zeros(self.max_num_nodes).to(device)
-        mask = self.mask.unsqueeze(0).repeat(len(x),1)  # max_num_nodes -> batch_size x max_num_nodes
+        mask = self.mask.unsqueeze(0).repeat(len(x), 1)  # max_num_nodes -> batch_size x max_num_nodes
         mask = None
 
         rep_graphs = []
         for i in range(self.num_graph_models):
             rep = self.graph_model[i](x, adj, mask=mask)  # n x num_node x h_dim
-            graph_rep = torch.cat([self.graph_pooling(rep, 'mean', mask=mask), self.graph_pooling(rep, 'max', mask=mask)], dim=-1)
+            graph_rep = torch.cat(
+                [self.graph_pooling(rep, 'mean', mask=mask), self.graph_pooling(rep, 'max', mask=mask)], dim=-1)
             graph_rep = self.encoder(graph_rep)  # n x h_dim
             rep_graphs.append(graph_rep.unsqueeze(0))  # [1 x n x h_dim]
 

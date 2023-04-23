@@ -240,7 +240,7 @@ if __name__ == '__main__':
 
     metrics = ['Accuracy', 'AUC-ROC', 'F1-score']
     x_dim = data["features_list"][0].shape[1]
-    max_num_nodes =  data["adj_list"][0].shape[1]
+    max_num_nodes = data["adj_list"][0].shape[1]
     model = Graph_pred_model(x_dim, args.dim_h, args.num_class, max_num_nodes, args.dataset_name).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
 
