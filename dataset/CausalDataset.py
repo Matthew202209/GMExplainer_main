@@ -32,7 +32,6 @@ class CausalDataset(torch.utils.data.Dataset):
                 'index': self.index[idx]
                 }
 
-
 def padding_graphs(adj_all, max_num_nodes):
     adj_all_padded = []
     for adj in adj_all:

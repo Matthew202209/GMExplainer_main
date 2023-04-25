@@ -16,7 +16,7 @@ class Graph_pred_model(nn.Module):
         self.num_graph_models = 3
         self.dataset = dataset
         self.graph_model = [DenseGraphConv(x_dim, h_dim) for i in range(self.num_graph_models)]
-        # self.graph_pool_type = 'mean'
+        self.graph_pool_type = 'mean'
         self.encoder = nn.Sequential(nn.Linear(2 * h_dim, h_dim), nn.BatchNorm1d(h_dim), nn.ReLU())
         self.predictor = nn.Sequential(nn.Linear(h_dim, n_out))
         self.max_num_nodes = max_num_nodes

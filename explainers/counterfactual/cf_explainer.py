@@ -104,8 +104,8 @@ class CFExplainer:
 		      'loss: {:.4f}'.format(loss_total.item()),
 		      'pred loss: {:.4f}'.format(loss_pred.item()),
 		      'graph loss: {:.4f}'.format(loss_graph_dist.item()))
-		print('Output: {}\n'.format(output[self.new_idx].data),
-		      'Output nondiff: {}\n'.format(output_actual[self.new_idx].data),
+		print('Output: {}\n'.format(output[self.new_idx].all_data),
+		      'Output nondiff: {}\n'.format(output_actual[self.new_idx].all_data),
 		      'orig pred: {}, new pred: {}, new pred nondiff: {}'.format(self.y_pred_orig, y_pred_new, y_pred_new_actual))
 		print(" ")
 		cf_stats = []
