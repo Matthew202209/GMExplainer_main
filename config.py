@@ -40,18 +40,21 @@ def get_args_for_gcf_gan():
     parser.add_argument('--encode_h_dim', type=int, default=32)
     parser.add_argument('--num_epoches_lr_decay', type=int, default=5000)
     parser.add_argument('--lr_update_step', type=int, default=100)
+    parser.add_argument('--num_class', type=int, default=2)
     parser.add_argument('--encode_type', type=str, default= 'graphConv')
-    parser.add_argument('--opt', type=str, default='Adam')
+    parser.add_argument('--opt', type=str, default='RMSprop')
 
     # discriminator setting
     parser.add_argument('--epoches', type=int, default=10000)
     parser.add_argument('--d_train_t', type=int, default=1)
     parser.add_argument('--d_dropout', type=float, default=0.4)
     parser.add_argument('--d_lr', type=float, default=0.001)
+    parser.add_argument('--clip_value', type=float, default=0.02)
+
     parser.add_argument('--d_graph_pool_type', type=str, default='mean')
     # generator setting
     parser.add_argument('--z_dim', type=int, default=3)
-    parser.add_argument('--g_train_t', type=int, default=1)
+    parser.add_argument('--n_critic', type=int, default=5)
     parser.add_argument('--conv_dims', default=[64, 128])
     parser.add_argument('--g_dropout', type=float, default=0.2)
     parser.add_argument('--g_lr', type=float, default=0.01)
@@ -70,5 +73,4 @@ def get_args_for_gcf_gan():
     parser.add_argument('--model_save_dir', type=str, default=r'D:\ProjectCodes\GMExplainer\models_save\explanation')
     args = parser.parse_args()
     return args
-
 

@@ -6,3 +6,5 @@ def creat_optimizer(parameters, opt='SGD', lr=0.01):
         return torch.optim.SGD(parameters, lr=lr)
     elif opt == 'Adam':
         return torch.optim.Adam(parameters, lr=lr)
+    elif opt == 'RMSprop':
+        return torch.optim.RMSprop(parameters, lr=lr)
