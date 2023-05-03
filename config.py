@@ -49,7 +49,7 @@ def get_args_for_gcf_gan():
     parser.add_argument('--d_train_t', type=int, default=1)
     parser.add_argument('--d_dropout', type=float, default=0.4)
     parser.add_argument('--d_lr', type=float, default=0.001)
-    parser.add_argument('--clip_value', type=float, default=0.02)
+    parser.add_argument('--clip_value', type=float, default=0.2)
 
     parser.add_argument('--d_graph_pool_type', type=str, default='mean')
     # generator setting
@@ -58,7 +58,7 @@ def get_args_for_gcf_gan():
     parser.add_argument('--conv_dims', default=[64, 128])
     parser.add_argument('--g_dropout', type=float, default=0.2)
     parser.add_argument('--g_lr', type=float, default=0.001)
-    parser.add_argument('--lamda_cf', type=float, default=5)
+    parser.add_argument('--lamda_dis', type=float, default=0.1)
     parser.add_argument('--proximity_threshold', type=float, default=0.85)
     parser.add_argument('--post_method', type=str, default='hard_gumbel')
     parser.add_argument('--g_graph_pool_type', type=str, default='mean')
