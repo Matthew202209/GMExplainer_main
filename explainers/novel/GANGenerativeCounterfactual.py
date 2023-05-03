@@ -31,7 +31,6 @@ from utils.Optimiser import creat_optimizer
 torch.set_default_tensor_type(torch.DoubleTensor)
 
 
-
 class GCFGAN(object):
     def __init__(self, args, all_data):
         # 参数
@@ -101,15 +100,14 @@ class GCFGAN(object):
         self.pred_model.to(self.device)
 
     def train(self):
-
-        global d_loss_real, d_loss_fake, d_loss, g_loss_fake, g_loss_cfe, g_loss, g_dis_loss
+        global d_loss_real, d_loss_fake, d_loss, g_loss_fake, g_loss_cfe, g_loss, g_dis_loss, adj, x, adj_reconst, orin_index
         data_loader = self.create_data_loader(mode='train')
-        validity = -1
+        best_validity = -1
         print('Start training...')
         # 生成反事实标签
         self.create_cf_label()
         time_begin = time.time()
-        for epoch in range(self.args.epoches):
+        for epoch in tqdm(range(self.args.epoches)):
             self.D.train()
             self.G.train()
             self.pred_model.eval()
@@ -122,15 +120,14 @@ class GCFGAN(object):
                 # 创建标签
                 y_label = self.label2onehot(np.array(self.all_data['labels'])[orin_index], self.args.num_class)
                 # 创建反事实标签
-                y_cf = self.label2onehot(self.select_cf_label(orin_index), self.args.num_class)
-                y_cf_label = self.select_cf_label(orin_index)
+                y_cf_label = self.label2onehot(self.select_cf_label(orin_index), self.args.num_class)
 
                 # =================================================================================== #
                 #                             2. Train the discriminator                              #
                 # =================================================================================== #
                 # 生成假样本
                 z = self.sample_z(self.args.batch_size)
-                adj_reconst = self.G(adj, x, z, y_cf)
+                adj_reconst = self.G(adj, x, z, y_cf_label)
 
                 # 计算真样本正例
                 logits_real_ture = self.D(adj, x, y_label)
@@ -161,41 +158,49 @@ class GCFGAN(object):
                 # =================================================================================== #
 
                 if (i + 1) % self.args.n_critic == 0:
-                    if (epoch + 1) % self.args.pretrain_epoch == 0:
-                        print('pretraining......')
+                    if (epoch + 1) < self.args.pretrain_epoch:
+                        if (epoch + 1) == 1:
+                            print('pretraining......')
                         z = self.sample_z(self.args.batch_size)
                         adj_reconst = self.G(adj, x, z, y_cf_label)
                         logits_fake = self.D(adj_reconst, x, y_cf_label)
                         g_loss = -torch.mean(logits_fake)
-                        if 'G/pre_train_g_loss' not in self.G.progress.key():
+                        if 'G/pre_train_g_loss' not in self.G.progress.keys():
                             self.G.progress['G/pre_train_g_loss'] = []
                             self.G.progress['G/pre_train_g_loss'] += [g_loss.item()]
                         else:
                             self.G.progress['G/pre_train_g_loss'] += [g_loss.item()]
                     else:
+                        if (epoch + 1) == self.args.pretrain_epoch:
+                            print('Finished Pretraining')
+                            print('Start CF Training......')
                         z = self.sample_z(self.args.batch_size)
                         adj_reconst = self.G(adj, x, z, y_cf_label)
                         with torch.no_grad():
-                            y_pred = self.pred_model(x, adj)['y_pred']
+                            p_y_label = self.pred_model(x, adj)['y_pred'].argmax(dim=1).view(-1, 1).detach().numpy()
 
-                        y_label = self.label2onehot(y_pred.detach().numpy(), self.args.num_class)
-                        y_cf_label = 1 - y_label
+                        p_y_cf_label = 1 - p_y_label
+                        p_y_label = self.label2onehot(p_y_label, self.args.num_class)
+                        p_y_cf_label = self.label2onehot(p_y_cf_label, self.args.num_class)
 
-                        logits_fake_ture = self.D(adj_reconst, x, y_cf_label)
+                        logits_fake_ture = self.D(adj_reconst, x, p_y_cf_label)
                         g_loss_fake_ture = -torch.mean(logits_fake_ture)
-                        logits_fake_false = self.D(adj_reconst, x, y_label)
+
+                        logits_fake_false = self.D(adj_reconst, x, p_y_label)
                         g_loss_fake_false = torch.mean(logits_fake_false)
                         g_loss = g_loss_fake_ture + g_loss_fake_false
-                        if 'G/cf_train_g_loss' not in self.G.progress.key():
+                        if 'G/cf_train_g_loss' not in self.G.progress.keys():
                             self.G.progress['G/cf_train_g_loss'] = []
                             self.G.progress['G/cf_train_g_loss'] += [g_loss.item()]
                         else:
                             self.G.progress['G/cf_train_g_loss'] += [g_loss.item()]
 
-                        if (epoch + 1) % self.args.train_similar_epoch == 0:
+                        if (epoch + 1) > self.args.train_similar_epoch:
+                            if (epoch + 1) == self.args.train_similar_epoch + 1:
+                                print('Start Similar Fine Tuning.......')
                             g_dis_loss = distance_graph_prob(adj, adj_reconst)
-                            g_loss = g_loss_fake_ture + g_loss_fake_false + self.args.lamda_dis * g_dis_loss
-                            if 'G/similar_train_g_loss' not in self.G.progress.key():
+                            g_loss = g_loss + self.args.lamda_dis * g_dis_loss
+                            if 'G/similar_train_g_loss' not in self.G.progress.keys():
                                 self.G.progress['G/similar_train_g_loss'] = []
                                 self.G.progress['G/g_dis_loss'] = []
                                 self.G.progress['G/similar_train_g_loss'] += [g_loss.item()]
@@ -212,56 +217,74 @@ class GCFGAN(object):
             #                                 4. Miscellaneous                                    #
             # =================================================================================== #
 
-            if (epoch+1) % 100 == 0:
+            if (epoch + 1) % self.args.val_epoch == 0:
                 et = time.time() - time_begin
+                y_cf = self.select_cf_label(orin_index)
+                c_adj = torch.bernoulli(adj_reconst)
+                with torch.no_grad():
+                    y_cf_pred = self.pred_model(x, c_adj)['y_pred']
+                eval_params = {'pred_model': self.pred_model, 'adj_input': adj, 'x_input': x, 'adj_reconst': c_adj,
+                               'y_cf': y_cf, 'y_cf_pred': y_cf_pred,
+                               'metrics': self.args.metrics, 'device': self.args.device}
+                train_eval_results = evaluate(eval_params)
+                train_eval_results.update({'D/d_loss': self.D.progress['D/loss_total'][-1]})
+                if (epoch + 1) < self.args.pretrain_epoch:
+                    train_eval_results.update({'G/g_loss': self.G.progress['G/pre_train_g_loss'][-1]})
+                else:
+                    if (epoch + 1) <= self.args.train_similar_epoch:
+                        train_eval_results.update({'G/g_loss': self.G.progress['G/cf_train_g_loss'][-1]})
+                    else:
+                        train_eval_results.update({'G/g_loss': self.G.progress['G/similar_train_g_loss'][-1],
+                                                   'G/g_dis_loss': self.G.progress['G/g_dis_loss'][-1]})
 
-                loss_dict = {'epoch': epoch,
-                             'D/loss_real': self.D.progress['D/loss_real'][-1],
-                             'D/loss_fake': self.D.progress['D/loss_fake'][-1],
-                             'D/loss_total': self.D.progress['D/loss_total'][-1],
-                             'G/loss_fake': self.G.progress['G/loss_fake'][-1],
-                             'G/loss_cf': self.G.progress['G/loss_cf'][-1],
-                             'G/loss_dis': self.G.progress['G/loss_dis'][-1],
-                             'G/loss_total': self.G.progress['G/loss_total'][-1]}
+                val_eval_results = self.evaluation(mode='val')
+                test_eval_results = self.evaluation(mode='test')
 
-                eval_results_all = self.evaluation()
-                eval_results_all.update(loss_dict)
+                eval_results_all = {'train_eval': train_eval_results, 'val_eval': val_eval_results,
+                                    'test_eval': test_eval_results, 'epoch': epoch + 1}
+
                 print_eval_results(eval_results_all, et)
-                if eval_results_all['validity'] > validity:
-                    validity = eval_results_all['validity']
-                    G_path = os.path.join(self.args.model_save_dir, 'best-G.ckpt')
-                    D_path = os.path.join(self.args.model_save_dir, 'best-D.ckpt')
-                    torch.save(self.G.state_dict(), G_path)
-                    torch.save(self.D.state_dict(), D_path)
-                    print('Saved model checkpoints into {}...'.format(self.args.model_save_dir))
+                eval_validity = eval_results_all['val_eval']['validity']
+                if (epoch + 1) >= self.args.pretrain_epoch:
+                    if eval_validity > best_validity:
+                        best_validity = eval_validity
+                        G_path = os.path.join(self.args.model_save_dir, 'best-G.ckpt')
+                        D_path = os.path.join(self.args.model_save_dir, 'best-D.ckpt')
+                        torch.save(self.G.state_dict(), G_path)
+                        torch.save(self.D.state_dict(), D_path)
+                        print('Saved model checkpoints into {}...'.format(self.args.model_save_dir))
+                time_begin = time.time()
+                # =================================================================================== #
+                #                              5. Update Learning Rate                                #
+                # =================================================================================== #
+            if (epoch + 1) % self.args.lr_update_step == 0 and (epoch + 1) > (
+                    self.args.epoches - self.args.num_epoches_lr_decay):
+                self.G.g_lr -= (self.args.g_lr / float(self.args.num_epoches_lr_decay))
+                self.D.d_lr -= (self.args.d_lr / float(self.args.num_epoches_lr_decay))
+                self.update_lr()
+                print('Decayed learning rates, g_lr: {}, d_lr: {}.'.format(self.G.g_lr, self.D.d_lr))
 
-                if (epoch + 1) % self.args.lr_update_step == 0 and (epoch + 1) > (
-                        self.args.epoches - self.args.num_epoches_lr_decay):
-                    self.G.g_lr -= (self.args.g_lr / float(self.args.num_epoches_lr_decay))
-                    self.D.d_lr -= (self.args.d_lr / float(self.args.num_epoches_lr_decay))
-                    self.update_lr()
-                    print('Decayed learning rates, g_lr: {}, d_lr: {}.'.format(self.G.g_lr, self.D.d_lr))
-
-    def evaluation(self):
+    def evaluation(self, mode='val'):
         # 调整模型状态
         self.D.eval()
         self.G.eval()
 
         eval_results_all = {}
-        data_loader = self.create_data_loader(mode='val')
+        data_loader = self.create_data_loader(mode=mode)
         with torch.no_grad():
             for i, element in enumerate(data_loader):
                 adj, x, orin_index = element['adj'], element['features'], element['index']
-                p_y = self.pred_model(x, adj)['y_pred'].argmax(dim=1).view(-1, 1)
-                labels = np.array(self.all_data['labels'])[orin_index]
-
-                acc = accuracy_score(labels, p_y.cpu().numpy())
-                print(acc)
-
-                y_cf = self.label2onehot(self.select_cf_label(orin_index), self.args.num_class)
-                z = self.sample_z(orin_index.shape[0])
-                adj_reconst = self.G(adj, x, z, y_cf)
+                # 得到反事实标签
+                batch_size = adj.shape[0]
+                y_cf_label = self.label2onehot(self.select_cf_label(orin_index), self.args.num_class)
+                y_cf = self.select_cf_label(orin_index)
+                # 生成cf图
+                z = self.sample_z(batch_size)
+                adj_reconst = self.G(adj, x, z, y_cf_label)
                 c_adj = torch.bernoulli(adj_reconst)
+                g_value = self.D(c_adj, x, y_cf_label)
+                g_value = torch.mean(g_value)
+                eval_results_all['g_value'] = g_value.item()
                 with torch.no_grad():
                     y_cf_pred = self.pred_model(x, c_adj)['y_pred']
 
@@ -321,11 +344,11 @@ class Discriminator(nn.Module):
         self.graph_pool_type = args.d_graph_pool_type
         self.dropout = args.d_dropout
         self.d_lr = args.d_lr
-
         # 计数器和进程记录
         self.counter = 0
-        self.progress = {'D/loss_real': [],
-                         'D/loss_fake': [],
+        self.progress = {'D/d_loss_real_ture': [],
+                         'D/d_loss_real_false': [],
+                         'D/d_loss_fake': [],
                          'D/loss_total': []
                          }
 
@@ -334,10 +357,10 @@ class Discriminator(nn.Module):
         elif self.encoder_type == 'graphConv':
             self.graph_model = DenseGraphConv(self.encode_x_dim, self.encode_h_dim)
 
-        self.label_encoder = nn.Linear(self.num_class, 32)
+        self.label_encoder = nn.Linear(self.num_class, 16)
 
         self.linear_layer = nn.Sequential(
-            nn.Linear(self.encode_h_dim + 32, 256),
+            nn.Linear(self.encode_h_dim + 16, 256),
             nn.BatchNorm1d(256),
             nn.Dropout(p=self.dropout, inplace=True),
             nn.LeakyReLU(),
@@ -374,7 +397,6 @@ class Generator(nn.Module):
         self.num_class = args.num_class
         self.graph_pool_type = args.g_graph_pool_type
         self.dropout = args.g_dropout
-        self.post_method = args.post_method
         self.g_lr = args.g_lr
 
         # 计数器和进程记录
@@ -461,9 +483,31 @@ def graph_pooling(x, _type='mean'):
 
 # 打印验证结果
 def print_eval_results(eval_results_all, run_time):
-    print(eval_results_all)
-    print(r'using time: {}'.format(run_time))
-    pass
+    train_results, val_results, test_results, epoch = eval_results_all['train_eval'], \
+        eval_results_all['val_eval'], eval_results_all['test_eval'], eval_results_all['epoch']
+    print(
+        '_____________________________________________________________________________________________________________')
+    print(r'epoch:{}'.format(epoch))
+    print(r'using time: {}s'.format(round(run_time, 2)))
+    if 'dis_loss' in train_results.keys():
+        print(
+            r'Training: D_loss:{}, G_loss:{}, dis_loss:{}, Validity:{}, Proximity:{}'.format(train_results['D/d_loss'],
+                                                                                             train_results['G/g_loss'],
+                                                                                             train_results['G/g_dis_loss'],
+                                                                                             train_results['validity'],
+                                                                                             train_results[
+                                                                                                 'proximity']))
+    else:
+        print(r'Training: D_loss:{}, G_loss:{}, Validity:{}, Proximity:{}'.format(train_results['D/d_loss'],
+                                                                                  train_results['G/g_loss'],
+                                                                                  train_results['validity'],
+                                                                                  train_results['proximity']))
+    print(r'Val: G_value:{}, Validity:{}, Proximity:{}'.format(test_results['g_value'],
+                                                               test_results['validity'],
+                                                               test_results['proximity']))
+    print(r'Test: G_value:{}, Validity:{}, Proximity:{}'.format(test_results['g_value'],
+                                                                test_results['validity'],
+                                                                test_results['proximity']))
 
 
 def distance_graph_prob(adj_1, adj_2_prob):
