@@ -117,8 +117,12 @@ class GCFGAN(object):
 
             for i, element in enumerate(data_loader):
                 adj, x, orin_index = element['adj'], element['features'], element['index']
+                adj = adj.to(self.device)
+                x = x.to(self.device)
+                # orin_index = orin_index.to(self.device)
                 # 创建标签
-                y_label = self.label2onehot(np.array(self.all_data['labels'])[orin_index], self.args.num_class)
+                y_label = self.label2onehot(torch.FloatTensor(self.all_data['labels'])[orin_index].to(self.device),
+                                            self.args.num_class)
                 # 创建反事实标签
                 y_cf_label = self.label2onehot(self.select_cf_label(orin_index), self.args.num_class)
 
@@ -177,37 +181,48 @@ class GCFGAN(object):
                         z = self.sample_z(self.args.batch_size)
                         adj_reconst = self.G(adj, x, z, y_cf_label)
                         with torch.no_grad():
-                            p_y_label = self.pred_model(x, adj)['y_pred'].argmax(dim=1).view(-1, 1).detach().numpy()
+                            p_y_label = self.pred_model(x, adj)['y_pred'].argmax(dim=1).view(-1, 1).detach()
+                        p_y_pred = self.pred_model(x, adj_reconst)['y_pred']  # n x num_class
 
                         p_y_cf_label = 1 - p_y_label
+                        loss_cf = F.nll_loss(F.log_softmax(p_y_pred, dim=-1), p_y_cf_label.view(-1).long())
                         p_y_label = self.label2onehot(p_y_label, self.args.num_class)
                         p_y_cf_label = self.label2onehot(p_y_cf_label, self.args.num_class)
 
                         logits_fake_ture = self.D(adj_reconst, x, p_y_cf_label)
                         g_loss_fake_ture = -torch.mean(logits_fake_ture)
+                        g_dis_loss = distance_graph_prob(adj, adj_reconst)
 
                         logits_fake_false = self.D(adj_reconst, x, p_y_label)
                         g_loss_fake_false = torch.mean(logits_fake_false)
-                        g_loss = g_loss_fake_ture + g_loss_fake_false
+                        g_loss = loss_cf + g_dis_loss + g_loss_fake_ture
+                        # if (epoch + 1) < self.args.train_similar_epoch:
+                        #     g_loss = g_loss_fake_ture + g_loss_fake_false + loss_cf + g_dis_loss
+                        # else:
+                        #     if (epoch + 1) % 3 == 0:
+                        #         g_loss = g_loss_fake_ture + g_loss_fake_false + loss_cf + g_dis_loss
+                        #     else:
+                        #         g_loss = g_loss_fake_ture + g_loss_fake_false + loss_cf
+
                         if 'G/cf_train_g_loss' not in self.G.progress.keys():
                             self.G.progress['G/cf_train_g_loss'] = []
                             self.G.progress['G/cf_train_g_loss'] += [g_loss.item()]
                         else:
                             self.G.progress['G/cf_train_g_loss'] += [g_loss.item()]
 
-                        if (epoch + 1) > self.args.train_similar_epoch:
-                            if (epoch + 1) == self.args.train_similar_epoch + 1:
-                                print('Start Similar Fine Tuning.......')
-                            g_dis_loss = distance_graph_prob(adj, adj_reconst)
-                            g_loss = g_loss + self.args.lamda_dis * g_dis_loss
-                            if 'G/similar_train_g_loss' not in self.G.progress.keys():
-                                self.G.progress['G/similar_train_g_loss'] = []
-                                self.G.progress['G/g_dis_loss'] = []
-                                self.G.progress['G/similar_train_g_loss'] += [g_loss.item()]
-                                self.G.progress['G/g_dis_loss'] += [g_dis_loss.item()]
-                            else:
-                                self.G.progress['G/similar_train_g_loss'] += [g_loss.item()]
-                                self.G.progress['G/g_dis_loss'] += [g_dis_loss.item()]
+                        # if (epoch + 1) > self.args.train_similar_epoch:
+                        #     if (epoch + 1) == self.args.train_similar_epoch + 1:
+                        #         print('Start Similar Fine Tuning.......')
+                        #     g_dis_loss = distance_graph_prob(adj, adj_reconst)
+                        #     g_loss = g_loss + self.args.lamda_dis * g_dis_loss
+                        #     if 'G/similar_train_g_loss' not in self.G.progress.keys():
+                        #         self.G.progress['G/similar_train_g_loss'] = []
+                        #         self.G.progress['G/g_dis_loss'] = []
+                        #         self.G.progress['G/similar_train_g_loss'] += [g_loss.item()]
+                        #         self.G.progress['G/g_dis_loss'] += [g_dis_loss.item()]
+                        #     else:
+                        #         self.G.progress['G/similar_train_g_loss'] += [g_loss.item()]
+                        #         self.G.progress['G/g_dis_loss'] += [g_dis_loss.item()]
 
                     self.reset_grad()
                     g_loss.backward()
@@ -231,11 +246,11 @@ class GCFGAN(object):
                 if (epoch + 1) < self.args.pretrain_epoch:
                     train_eval_results.update({'G/g_loss': self.G.progress['G/pre_train_g_loss'][-1]})
                 else:
-                    if (epoch + 1) <= self.args.train_similar_epoch:
-                        train_eval_results.update({'G/g_loss': self.G.progress['G/cf_train_g_loss'][-1]})
-                    else:
-                        train_eval_results.update({'G/g_loss': self.G.progress['G/similar_train_g_loss'][-1],
-                                                   'G/g_dis_loss': self.G.progress['G/g_dis_loss'][-1]})
+                    # if (epoch + 1) <= self.args.train_similar_epoch:
+                    train_eval_results.update({'G/g_loss': self.G.progress['G/cf_train_g_loss'][-1]})
+                    # else:
+                    #     train_eval_results.update({'G/g_loss': self.G.progress['G/similar_train_g_loss'][-1],
+                    #                                'G/g_dis_loss': self.G.progress['G/g_dis_loss'][-1]})
 
                 val_eval_results = self.evaluation(mode='val')
                 test_eval_results = self.evaluation(mode='test')
@@ -274,12 +289,14 @@ class GCFGAN(object):
         with torch.no_grad():
             for i, element in enumerate(data_loader):
                 adj, x, orin_index = element['adj'], element['features'], element['index']
+                adj = adj.to(self.device)
+                x = x.to(self.device)
                 # 得到反事实标签
                 batch_size = adj.shape[0]
                 y_cf_label = self.label2onehot(self.select_cf_label(orin_index), self.args.num_class)
                 y_cf = self.select_cf_label(orin_index)
                 # 生成cf图
-                z = self.sample_z(batch_size)
+                z = self.sample_z(batch_size).to(self.device)
                 adj_reconst = self.G(adj, x, z, y_cf_label)
                 c_adj = torch.bernoulli(adj_reconst)
                 g_value = self.D(c_adj, x, y_cf_label)
@@ -502,9 +519,9 @@ def print_eval_results(eval_results_all, run_time):
                                                                                   train_results['G/g_loss'],
                                                                                   train_results['validity'],
                                                                                   train_results['proximity']))
-    print(r'Val: G_value:{}, Validity:{}, Proximity:{}'.format(test_results['g_value'],
-                                                               test_results['validity'],
-                                                               test_results['proximity']))
+    print(r'Val: G_value:{}, Validity:{}, Proximity:{}'.format(val_results['g_value'],
+                                                               val_results['validity'],
+                                                               val_results['proximity']))
     print(r'Test: G_value:{}, Validity:{}, Proximity:{}'.format(test_results['g_value'],
                                                                 test_results['validity'],
                                                                 test_results['proximity']))

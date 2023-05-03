@@ -28,7 +28,7 @@ def get_args():
 def get_args_for_gcf_gan():
     parser = argparse.ArgumentParser()
     # device setting
-    parser.add_argument('--device', type=str, default="cpu")
+    parser.add_argument('--device', type=str, default="cuda:0")
     # data loading
     parser.add_argument('--data_path', type=str, default=r'D:\ProjectCodes\GMExplainer\data')
     parser.add_argument('--task_type', type=str, default=r'graph_classification')
@@ -38,29 +38,29 @@ def get_args_for_gcf_gan():
     # training setting
     parser.add_argument('--batch_size', type=int, default=128)
     parser.add_argument('--encode_h_dim', type=int, default=32)
-    parser.add_argument('--num_epoches_lr_decay', type=int, default=6000)
+    parser.add_argument('--num_epoches_lr_decay', type=int, default=10000)
     parser.add_argument('--lr_update_step', type=int, default=100)
     parser.add_argument('--num_class', type=int, default=2)
     parser.add_argument('--encode_type', type=str, default= 'graphConv')
     parser.add_argument('--opt', type=str, default='RMSprop')
 
     # discriminator setting
-    parser.add_argument('--epoches', type=int, default=10000)
+    parser.add_argument('--epoches', type=int, default=30000)
     parser.add_argument('--d_train_t', type=int, default=1)
     parser.add_argument('--d_dropout', type=float, default=0.4)
     parser.add_argument('--d_lr', type=float, default=0.001)
-    parser.add_argument('--clip_value', type=float, default=0.2)
+    parser.add_argument('--clip_value', type=float, default=0.5)
 
     parser.add_argument('--d_graph_pool_type', type=str, default='mean')
     # generator setting
-    parser.add_argument('--pretrain_epoch', type=int, default=3000)
-    parser.add_argument('--train_similar_epoch', type=int, default=6000)
+    parser.add_argument('--pretrain_epoch', type=int, default=15000)
+    parser.add_argument('--train_similar_epoch', type=int, default=9000)
     parser.add_argument('--z_dim', type=int, default=8)
     parser.add_argument('--n_critic', type=int, default=5)
     parser.add_argument('--conv_dims', default=[64, 128])
     parser.add_argument('--g_dropout', type=float, default=0.4)
-    parser.add_argument('--g_lr', type=float, default=0.001)
-    parser.add_argument('--lamda_dis', type=float, default=0.1)
+    parser.add_argument('--g_lr', type=float, default=0.005)
+    parser.add_argument('--lamda_dis', type=float, default=0.5)
     parser.add_argument('--g_graph_pool_type', type=str, default='mean')
     # prediction model setting
     parser.add_argument('--p_h_dim', type=int, default=32)
