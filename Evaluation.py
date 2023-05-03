@@ -21,6 +21,7 @@ def evaluate(eval_params):
 def evaluate_validity(y_cf, y_cf_pred, device):
     y_cf_pred_binary = F.softmax(y_cf_pred, dim=-1)
     y_cf_pred_binary = y_cf_pred_binary.argmax(dim=1).view(-1, 1)
+    y_cf = y_cf.argmax(dim=1).view(-1, 1)
     y_eq = torch.where(y_cf == y_cf_pred_binary, torch.tensor(1.0).to(device), torch.tensor(0.0).to(device))
     score_valid = torch.mean(y_eq)
     return score_valid

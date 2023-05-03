@@ -9,7 +9,7 @@ def get_args():
     parser.add_argument('--data_path', type=str, default=r'D:\ProjectCodes\GMExplainer\data')
     parser.add_argument('--task_type', type=str, default=r'graph_classification')
     parser.add_argument('--data_type', type=str, default=r'causal')
-    parser.add_argument('--dataset_name', type=str, default=r'ogng_molhiv')
+    parser.add_argument('--dataset_name', type=str, default=r'imdb_m')
     # model checkpoint
     parser.add_argument('--models_save_path', type=str, default=r'.\models_save')
     parser.add_argument('--exp_type', type=str, default=r'prediction')
@@ -36,7 +36,7 @@ def get_args_for_gcf_gan():
     parser.add_argument('--dataset_name', type=str, default=r'imdb_m')
     parser.add_argument('--used_dataset', type=str, default=r'CausalDataset')
     # training setting
-    parser.add_argument('--batch_size', type=int, default=64)
+    parser.add_argument('--batch_size', type=int, default=128)
     parser.add_argument('--encode_h_dim', type=int, default=32)
     parser.add_argument('--num_epoches_lr_decay', type=int, default=5000)
     parser.add_argument('--lr_update_step', type=int, default=100)
@@ -53,11 +53,13 @@ def get_args_for_gcf_gan():
 
     parser.add_argument('--d_graph_pool_type', type=str, default='mean')
     # generator setting
-    parser.add_argument('--z_dim', type=int, default=3)
-    parser.add_argument('--n_critic', type=int, default=5)
+    parser.add_argument('--z_dim', type=int, default=10)
+    parser.add_argument('--n_critic', type=int, default=3)
     parser.add_argument('--conv_dims', default=[64, 128])
     parser.add_argument('--g_dropout', type=float, default=0.2)
-    parser.add_argument('--g_lr', type=float, default=0.01)
+    parser.add_argument('--g_lr', type=float, default=0.001)
+    parser.add_argument('--lamda_cf', type=float, default=5)
+    parser.add_argument('--proximity_threshold', type=float, default=0.85)
     parser.add_argument('--post_method', type=str, default='hard_gumbel')
     parser.add_argument('--g_graph_pool_type', type=str, default='mean')
     # prediction model setting

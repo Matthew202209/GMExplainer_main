@@ -171,9 +171,11 @@ def test(params):
         if (labels == 1).sum() == len(labels):
             print('no way!')
 
-        model_return = model(features, adj)
+        with torch.no_grad():
+            model_return = model(features, adj)
         y_pred = model_return['y_pred']
-
+        y_p = y_pred.argmax(dim=1).view(-1, 1)
+        acc = accuracy_score(labels.cpu().numpy(), y_p.cpu().numpy())
         # compute loss
         loss_params = {'model': model, 'labels': labels}
         loss_params.update(model_return)

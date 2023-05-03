@@ -5,6 +5,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
+from sklearn.metrics import accuracy_score
 
 from tqdm import tqdm
 import numpy as np
@@ -28,6 +29,7 @@ from utils.LoadData import get_data_path, load_data, select_dataloader
 from utils.Optimiser import creat_optimizer
 
 torch.set_default_tensor_type(torch.DoubleTensor)
+
 
 
 class GCFGAN(object):
@@ -99,6 +101,7 @@ class GCFGAN(object):
         self.pred_model.to(self.device)
 
     def train(self):
+
         global d_loss_real, d_loss_fake, d_loss, g_loss_fake, g_loss_cfe, g_loss, g_dis_loss
         data_loader = self.create_data_loader(mode='train')
         validity = -1
@@ -116,16 +119,20 @@ class GCFGAN(object):
 
             for i, element in enumerate(data_loader):
                 adj, x, orin_index = element['adj'], element['features'], element['index']
+                p_y = self.pred_model(x, adj)['y_pred'].argmax(dim=1).view(-1, 1)
+                labels = np.array(self.all_data['labels'])[orin_index]
+
+                acc = accuracy_score(labels, p_y.cpu().numpy())
+                # print(acc)
 
                 # 创建反事实标签
                 y_cf = self.label2onehot(self.select_cf_label(orin_index), self.args.num_class)
-
+                y_cf_label = self.select_cf_label(orin_index)
 
                 # =================================================================================== #
                 #                             2. Train the discriminator                              #
                 # =================================================================================== #
-                    # 清零优化器
-                    # 计算真实数据的loss
+                # 计算真实数据的loss
                 logits_real = self.D(adj, x)
                 d_loss_real = - torch.mean(logits_real)
                 # 创造反事实例子
@@ -142,12 +149,15 @@ class GCFGAN(object):
 
                 for p in self.D.parameters():
                     p.data.clamp_(-self.args.clip_value, self.args.clip_value)
+                self.D.progress['D/loss_real'] += [d_loss_real.item()]
+                self.D.progress['D/loss_fake'] += [d_loss_fake.item()]
+                self.D.progress['D/loss_total'] += [d_loss.item()]
 
                 # =================================================================================== #
                 #                             3. Train the generator                                  #
                 # =================================================================================== #
 
-                if i % self.args.n_critic == 0:
+                if (epoch + 1) % self.args.n_critic == 0:
                     # 创造反事实
                     z = self.sample_z(self.args.batch_size)
                     adj_reconst = self.G(adj, x, z, y_cf)
@@ -155,35 +165,44 @@ class GCFGAN(object):
                     # 计算新图相似性
                     g_dis_loss = distance_graph_prob(adj, adj_reconst)
 
-                    #计算cf损失
-                    c_adj = torch.bernoulli(adj_reconst)
+                    # 计算cf损失
+                    # c_adj = torch.bernoulli(adj_reconst)
 
                     # 计算创造数据的loss
-                    logits_fake = self.D(c_adj, x)
+                    logits_fake = self.D(adj_reconst, x)
                     g_loss_fake = -torch.mean(logits_fake)
                     # 反事实损失
-                    y_pred = self.pred_model(x, c_adj)['y_pred']  # n x num_class
-                    g_loss_cf = F.nll_loss(F.log_softmax(y_pred, dim=-1), y_cf.view(-1).long())
-                    g_loss = g_loss_fake + g_loss_cf + g_dis_loss
+                    with torch.no_grad():
+                        y_pred = self.pred_model(x, adj_reconst)['y_pred']
+
+                    g_loss_cf = F.nll_loss(F.log_softmax(y_pred, dim=-1), y_cf_label.view(-1).long())
+
+                    # score_proximity = (adj == c_adj).float().mean()
+                    g_loss = g_loss_fake + g_loss_cf
+
+                    # if (epoch + 1) < 1000:
+                    #     g_loss = g_loss_fake + g_loss_cf
+                    # else:
+                    #     if score_proximity > self.args.proximity_threshold:
+                    #         g_loss = g_loss_fake + self.args.lamda_cf * g_loss_cf + 0.1 * g_dis_loss
+                    #     else:
+                    #         g_loss = g_loss_fake + self.args.lamda_cf * g_loss_cf
+
                     self.reset_grad()
                     g_loss.backward()
                     self.G.optimizer.step()
 
-            self.D.progress['D/loss_real'] += [d_loss_real.item()]
-            self.D.progress['D/loss_fake'] += [d_loss_fake.item()]
-            self.D.progress['D/loss_total'] += [d_loss.item()]
-            self.G.progress['G/loss_fake'] += [g_loss_fake.item()]
-            self.G.progress['G/loss_cf'] += [g_loss_cfe.item()]
-            self.G.progress['G/loss_dis'] += [g_dis_loss.item()]
-            self.G.progress['G/loss_total'] += [g_loss.item()]
+                    self.G.progress['G/loss_fake'] += [g_loss_fake.item()]
+                    self.G.progress['G/loss_cf'] += [g_loss_cf.item()]
+                    self.G.progress['G/loss_dis'] += [g_dis_loss.item()]
+                    self.G.progress['G/loss_total'] += [g_loss.item()]
 
             # =================================================================================== #
             #                                 4. Miscellaneous                                    #
             # =================================================================================== #
 
-            if epoch % 100 == 0:
+            if (epoch+1) % 100 == 0:
                 et = time.time() - time_begin
-
 
                 loss_dict = {'epoch': epoch,
                              'D/loss_real': self.D.progress['D/loss_real'][-1],
@@ -222,21 +241,24 @@ class GCFGAN(object):
         with torch.no_grad():
             for i, element in enumerate(data_loader):
                 adj, x, orin_index = element['adj'], element['features'], element['index']
-                y_cf = self.select_cf_label(orin_index)
-                z = self.sample_z(orin_index.shape[0])
-                c_adj = self.G(adj, x, z, y_cf)
-                # 计算创造数据的loss
-                logits_fake = self.D(c_adj, x)
-                similarity = torch.mean(logits_fake).item()
+                p_y = self.pred_model(x, adj)['y_pred'].argmax(dim=1).view(-1, 1)
+                labels = np.array(self.all_data['labels'])[orin_index]
 
-                y_cf_pred = self.pred_model(x, c_adj)['y_pred']
+                acc = accuracy_score(labels, p_y.cpu().numpy())
+                print(acc)
+
+                y_cf = self.label2onehot(self.select_cf_label(orin_index), self.args.num_class)
+                z = self.sample_z(orin_index.shape[0])
+                adj_reconst = self.G(adj, x, z, y_cf)
+                c_adj = torch.bernoulli(adj_reconst)
+                with torch.no_grad():
+                    y_cf_pred = self.pred_model(x, c_adj)['y_pred']
 
                 # 计算评价指标
                 eval_params = {'pred_model': self.pred_model, 'adj_input': adj, 'x_input': x, 'adj_reconst': c_adj,
                                'y_cf': y_cf, 'y_cf_pred': y_cf_pred,
                                'metrics': self.args.metrics, 'device': self.args.device}
                 eval_results = evaluate(eval_params)
-                eval_results.update({'similarity': similarity})
                 eval_results_all.update(eval_results)
 
         return eval_results_all
@@ -260,9 +282,9 @@ class GCFGAN(object):
 
     def label2onehot(self, labels, dim):
         """Convert label indices to one-hot vectors."""
-        out = torch.zeros([labels.shape[0]]+[dim]).to(self.device)
-        labels = torch.tensor(labels, dtype=torch.int64)
-        out.scatter_(len(out.size())-1, labels, 1.)
+        out = torch.zeros([labels.shape[0]] + [dim]).to(self.device)
+        labels = torch.as_tensor(labels, dtype=torch.int64)
+        out.scatter_(len(out.size()) - 1, labels, 1.)
         return out
 
     @staticmethod
@@ -341,18 +363,20 @@ class Generator(nn.Module):
         # 计数器和进程记录
         self.counter = 0
         self.progress = {'G/loss_fake': [],
+                         'G/loss_dis': [],
                          'G/loss_cf': [],
-                         'G/loss_total': []}
+                         'G/loss_total': []
+                         }
 
         if self.encoder_type == 'gcn':
             self.graph_model = DenseGCNConv(self.encode_x_dim, self.encode_h_dim)
         elif self.encoder_type == 'graphConv':
             self.graph_model = DenseGraphConv(self.encode_x_dim, self.encode_h_dim)
 
-        self.label_encoder = nn.Linear(self.num_class, 10)
+        self.label_encoder = nn.Linear(self.num_class, 32)
 
         layers = []
-        for c0, c1 in zip([self.z_dim + self.encode_h_dim + 10] + self.conv_dims[:-1], self.conv_dims):
+        for c0, c1 in zip([self.z_dim + self.encode_h_dim + 32] + self.conv_dims[:-1], self.conv_dims):
             layers.append(nn.Linear(c0, c1))
             layers.append(nn.LeakyReLU(0.2, inplace=True))
             layers.append(nn.LayerNorm(c1))
@@ -362,7 +386,6 @@ class Generator(nn.Module):
         self.edges_layer = nn.Linear(self.conv_dims[-1], self.max_num_nodes * self.max_num_nodes)
         self.sigmoid = nn.Sigmoid()
 
-
         # 创建优化器
         self.optimizer = creat_optimizer(self.parameters(), opt=args.opt, lr=self.g_lr)
 
@@ -371,14 +394,14 @@ class Generator(nn.Module):
         encode_label = self.label_encoder(cf_label)
         # graph rep
         rep = self.graph_model(features, adj)  # n x num_node x h_dim
-        graph_rep = self.graph_pooling(rep, self.graph_pool_type)
+        graph_rep = graph_pooling(rep, self.graph_pool_type)
 
         in_put = torch.cat([z, graph_rep, encode_label], dim=1)
         out_put = self.layers(in_put)
         adj_logits = self.edges_layer(out_put).view(-1, self.max_num_nodes, self.max_num_nodes)
 
         # 对称
-        adj_logits = (adj_logits + torch.transpose(adj_logits, dim0=1, dim1=2))/2
+        adj_logits = (adj_logits + torch.transpose(adj_logits, dim0=1, dim1=2)) / 2
         reconstructed_adj = self.sigmoid(adj_logits)
 
         # Generator.postprocess(edges_logits, method=self.post_method)
@@ -429,6 +452,7 @@ def print_eval_results(eval_results_all, run_time):
 def distance_graph_prob(adj_1, adj_2_prob):
     dist = F.binary_cross_entropy(adj_2_prob, adj_1)
     return dist
+
 
 if __name__ == '__main__':
     args = get_args_for_gcf_gan()
