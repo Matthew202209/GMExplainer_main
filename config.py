@@ -41,6 +41,8 @@ def get_args_for_gcf_gan():
     parser.add_argument('--num_epoches_lr_decay', type=int, default=10000)
     parser.add_argument('--lr_update_step', type=int, default=100)
     parser.add_argument('--num_class', type=int, default=2)
+    parser.add_argument('--seed', type=int, default=1, metavar='S',
+                        help='random seed (default: 1)')
     parser.add_argument('--encode_type', type=str, default= 'graphConv')
     parser.add_argument('--opt', type=str, default='RMSprop')
 
@@ -53,7 +55,7 @@ def get_args_for_gcf_gan():
 
     parser.add_argument('--d_graph_pool_type', type=str, default='mean')
     # generator setting
-    parser.add_argument('--pretrain_epoch', type=int, default=15000)
+    parser.add_argument('--pretrain_epoch', type=int, default=1)
     parser.add_argument('--train_similar_epoch', type=int, default=9000)
     parser.add_argument('--z_dim', type=int, default=8)
     parser.add_argument('--n_critic', type=int, default=5)

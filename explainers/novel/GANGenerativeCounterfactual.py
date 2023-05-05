@@ -31,10 +31,13 @@ from utils.Optimiser import creat_optimizer
 torch.set_default_tensor_type(torch.DoubleTensor)
 
 
+
 class GCFGAN(object):
     def __init__(self, args, all_data):
+
         # 参数
         self.args = args
+
         # 训练设备
         self.device = self.args.device
         # 数据集
@@ -49,6 +52,13 @@ class GCFGAN(object):
         self.pred_model = None
         # 地址
         # self.model_save_dir = self.args.model_save_dir
+
+    def setup_seed(self):
+        torch.manual_seed(self.args.seed)
+        torch.cuda.manual_seed_all(self.args.seed)
+        np.random.seed(self.args.seed)
+        random.seed(self.args.seed)
+        torch.backends.cudnn.deterministic = True
 
     """数据处理"""
 
@@ -85,7 +95,9 @@ class GCFGAN(object):
         x_dim = self.all_data["features_list"][0].shape[1]
         max_num_nodes = self.all_data["adj_list"][0].shape[1]
         # 创建判别器和构造器
+        self.setup_seed()
         self.D = Discriminator(self.args, x_dim)
+        self.setup_seed()
         self.G = Generator(self.args, max_num_nodes, x_dim)
 
         # 打印模型结构
@@ -130,6 +142,7 @@ class GCFGAN(object):
                 #                             2. Train the discriminator                              #
                 # =================================================================================== #
                 # 生成假样本
+
                 z = self.sample_z(self.args.batch_size)
                 adj_reconst = self.G(adj, x, z, y_cf_label)
 
@@ -165,6 +178,7 @@ class GCFGAN(object):
                     if (epoch + 1) < self.args.pretrain_epoch:
                         if (epoch + 1) == 1:
                             print('pretraining......')
+                        self.setup_seed()
                         z = self.sample_z(self.args.batch_size)
                         adj_reconst = self.G(adj, x, z, y_cf_label)
                         logits_fake = self.D(adj_reconst, x, y_cf_label)
@@ -315,6 +329,7 @@ class GCFGAN(object):
         return eval_results_all
 
     def sample_z(self, batch_size):
+        self.setup_seed()
         s_z = np.random.normal(0, 1, size=(batch_size, self.args.z_dim))
         tensor_s_z = torch.FloatTensor(s_z).to(self.device)
         return tensor_s_z
