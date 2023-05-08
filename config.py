@@ -1,10 +1,12 @@
 import argparse
 
 
-def get_args():
+def init_prediction_args():
     parser = argparse.ArgumentParser()
     # cuda setting
     parser.add_argument('--cuda', type=bool, default=False)
+    # seed setting
+    parser.add_argument('--seed', type=int, default=112)
     # datafile setting
     parser.add_argument('--data_path', type=str, default=r'D:\ProjectCodes\GMExplainer\data')
     parser.add_argument('--task_type', type=str, default=r'graph_classification')
@@ -13,11 +15,15 @@ def get_args():
     # model checkpoint
     parser.add_argument('--models_save_path', type=str, default=r'.\models_save')
     parser.add_argument('--exp_type', type=str, default=r'prediction')
+    parser.add_argument('--model', type=str, default='MolecularClassifier')
+    parser.add_argument('--metrics', default=['Accuracy', 'AUC-ROC', 'F1-score'])
+    parser.add_argument('--save_model', type=bool, default=True)
     # prediction model parameter
     parser.add_argument('--batch_size', type=int, default=100)
-    parser.add_argument('--dim_h', type=int, default=32)
-    parser.add_argument('--num_class', type=int, default=2)
+    parser.add_argument('--h_dim', type=int, default=32)
+    parser.add_argument('--num_classes', type=int, default=2)
     parser.add_argument('--epochs', type=int, default=5000)
+    parser.add_argument('--dropout', type=float, default=0.1)
     parser.add_argument('--lr', type=int, default=1e-4)
     parser.add_argument('--weight_decay', type=float, default=1e-5,
                         help='weight decay')
@@ -43,7 +49,7 @@ def get_args_for_gcf_gan():
     parser.add_argument('--num_class', type=int, default=2)
     parser.add_argument('--seed', type=int, default=1, metavar='S',
                         help='random seed (default: 1)')
-    parser.add_argument('--encode_type', type=str, default= 'graphConv')
+    parser.add_argument('--encode_type', type=str, default='graphConv')
     parser.add_argument('--opt', type=str, default='RMSprop')
 
     # discriminator setting
@@ -78,3 +84,27 @@ def get_args_for_gcf_gan():
     args = parser.parse_args()
     return args
 
+
+class PredictionModelConfig:
+    Tox21_classifier_config = {
+        # cuda setting
+        'cuda': True,
+        # datafile setting
+        'data_path': r'D:\ProjectCodes\GMExplainer\data',
+        'task_type': r'graph_classification',
+        'data_type': r'realworld',
+        'dataset_name': r'Tox21_ahr',
+        'dataset_list': [],
+        # model checkpoint
+        'model' : r'MolecularClassifier',
+        'models_save_path': r'.\models_save',
+        'exp_type': r'prediction',
+        'save_model': True,
+        # prediction model parameter
+        'batch_size': 64,
+        'dim_h': 32,
+        'num_class': 2,
+        'epochs': 2000,
+        'lr': 0.0001,
+        'weight_decay': 1e-5,
+        'dropout': 0.5}
