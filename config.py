@@ -108,3 +108,49 @@ class PredictionModelConfig:
         'lr': 0.0001,
         'weight_decay': 1e-5,
         'dropout': 0.5}
+
+    Imdb_classifier_config = {
+        # cuda setting
+        'cuda': True,
+        # datafile setting
+        'data_path': r'D:\ProjectCodes\GMExplainer\data',
+        'task_type': r'graph_classification',
+        'data_type': r'causal',
+        'dataset_name': r'imdb_m',
+        'dataset_list': [],
+        # model checkpoint
+        'model': r'GraphPredModel',
+        'models_save_path': r'.\models_save',
+        'exp_type': r'prediction',
+        'save_model': True,
+        # prediction model parameter
+        'batch_size': 64,
+        'dim_h': 32,
+        'num_class': 2,
+        'epochs': 1000,
+        'lr': 0.0005,
+        'weight_decay': 1e-5,
+        'dropout': 0.2}
+
+    Ogng_classifier_config = {
+        # cuda setting
+        'cuda': True,
+        # datafile setting
+        'data_path': r'D:\ProjectCodes\GMExplainer\data',
+        'task_type': r'graph_classification',
+        'data_type': r'causal',
+        'dataset_name': r'ogng_molhiv',
+        'dataset_list': [],
+        # model checkpoint
+        'model': r'GraphPredModel',
+        'models_save_path': r'.\models_save',
+        'exp_type': r'prediction',
+        'save_model': True,
+        # prediction model parameter
+        'batch_size': 512,
+        'dim_h': 32,
+        'num_class': 2,
+        'epochs': 500,
+        'lr': 0.0005,
+        'weight_decay': 1e-5,
+        'dropout': 0.2}

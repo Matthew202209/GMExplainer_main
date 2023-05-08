@@ -42,7 +42,9 @@ class GCFGAN(object):
         # 数据集
         self.all_data = all_data
         self.dataloader = {}
-        self.y_cf = None
+
+        # 模型预测结果
+        self.pred_y = None
         # 训练参数
         # 测试参数
         # 模型
@@ -52,6 +54,15 @@ class GCFGAN(object):
         self.pred_model = None
         # 地址
         # self.model_save_dir = self.args.model_save_dir
+
+    def get_prediction(self):
+        if self.pred_model is None:
+            print(r'No prediction model!')
+        else:
+            adj = torch.FloatTensor(self.all_data['adj_list']).to(self.device)
+            x = torch.FloatTensor(self.all_data['features_list']).to(self.device)
+            with torch.no_grad():
+                self.pred_y = self.pred_model(x, adj)['y_pred'].argmax(dim=1).view(-1, 1).detach()
 
     def setup_seed(self):
         torch.manual_seed(self.args.seed)
@@ -81,14 +92,6 @@ class GCFGAN(object):
             elif mode == 'test':
                 self.dataloader['test'] = select_dataloader(self.all_data, data_idx, dataset, batch_size=len(data_idx),
                                                             num_workers=0, padded=False)
-
-    # 创建反事实标签
-    def create_cf_label(self, p_y_label):
-        if int(p_y_label.shape[1]) == 2:
-            return 1 - p_y_label
-
-    def select_cf_label(self, orin_index):
-        return self.y_cf[orin_index]
 
     def build_model(self):
         x_dim = self.all_data["features_list"][0].shape[1]
@@ -121,6 +124,7 @@ class GCFGAN(object):
         print('Start training...')
         # 生成反事实标签
         time_begin = time.time()
+        best_loss = 1000000000000
         for epoch in tqdm(range(self.args.epoches)):
             self.D.train()
             self.G.train()
@@ -133,13 +137,12 @@ class GCFGAN(object):
                 adj, x, orin_index = element['adj'], element['features'], element['index']
                 adj = adj.to(self.device)
                 x = x.to(self.device)
-                # orin_index = orin_index.to(self.device)
+                orin_index = orin_index.to(self.device)
+                p_y_label = self.pred_y[orin_index]
                 # 创建标签
-                with torch.no_grad():
-                    p_y_label = self.pred_model(x, adj)['y_pred'].argmax(dim=1).view(-1, 1).detach()
                 p_y_label = self.label2onehot(p_y_label, self.args.num_class)
                 # 创建反事实标签
-                p_y_cf_label = self.create_cf_label(p_y_label)
+                p_y_cf_label = GCFGAN.create_cf_label(p_y_label)
 
                 # =================================================================================== #
                 #                             2. Train the discriminator                              #
@@ -177,7 +180,7 @@ class GCFGAN(object):
                 #                             3. Train the generator                                  #
                 # =================================================================================== #
 
-                if (i + 1) % self.args.n_critic == 0:
+                if (epoch + 1) % self.args.n_critic == 0:
                     if (epoch + 1) < self.args.pretrain_epoch:
                         z = self.sample_z(self.args.batch_size)
                         adj_reconst = self.G(adj, x, z, p_y_cf_label)
@@ -189,14 +192,13 @@ class GCFGAN(object):
                         else:
                             self.G.progress['G/g_loss'] += [g_loss.item()]
                     else:
-                        if (epoch + 1) == self.args.pretrain_epoch:
+                        if (epoch + 1) >= self.args.pretrain_epoch:
                             print('Finished Pretraining')
                             print('Start CF Training......')
                         z = self.sample_z(self.args.batch_size)
                         adj_reconst = self.G(adj, x, z, p_y_cf_label)
                         # 假样本预测结果
                         p_y_pred_fake = self.pred_model(x, adj_reconst)['y_pred']  # n x num_class
-                        # p_y_cf_label = 1 - p_y_label
 
                         loss_cf = F.nll_loss(F.log_softmax(p_y_pred_fake, dim=-1),
                                              p_y_cf_label.argmax(dim=1).view(-1, 1).detach().view(-1).long())
@@ -205,8 +207,8 @@ class GCFGAN(object):
                         # 计算对抗损失
                         logits_fake_ture = self.D(adj_reconst, x, p_y_cf_label)
                         g_loss_fake_ture = -torch.mean(logits_fake_ture)
-
                         g_dis_loss = distance_graph_prob(adj, adj_reconst)
+
                         self.G.progress['G/g_loss'] += [g_loss_fake_ture.item()]
                         if (epoch + 1) < self.args.train_dis_epoch:
                             g_loss = 0 * loss_cf + g_dis_loss + g_loss_fake_ture
@@ -224,7 +226,6 @@ class GCFGAN(object):
                             else:
                                 self.G.progress['G/loss_cf'] += [loss_cf.item()]
                                 self.G.progress['G/dis_loss'] += [g_dis_loss.item()]
-
                     self.reset_grad()
                     g_loss.backward()
                     self.G.optimizer.step()
@@ -232,7 +233,6 @@ class GCFGAN(object):
             # =================================================================================== #
             #                                 4. Miscellaneous                                    #
             # =================================================================================== #
-
             if (epoch + 1) % self.args.val_epoch == 0:
                 et = time.time() - time_begin
                 y_cf = p_y_cf_label.argmax(dim=1).view(-1, 1).detach()
@@ -244,7 +244,6 @@ class GCFGAN(object):
                                'metrics': self.args.metrics, 'device': self.args.device}
                 train_eval_results = evaluate(eval_params)
                 train_eval_results.update({'D/d_loss': self.D.progress['D/loss_total'][-1]})
-
                 train_eval_results.update({'G/g_loss': self.G.progress['G/g_loss'][-1]})
 
                 if (epoch + 1) < self.args.train_dis_epoch:
@@ -260,10 +259,10 @@ class GCFGAN(object):
                                     'test_eval': test_eval_results, 'epoch': epoch + 1}
 
                 print_eval_results(eval_results_all, et)
-                eval_validity = eval_results_all['val_eval']['validity']
+                total_loss = val_eval_results['total_loss']
                 if (epoch + 1) >= self.args.pretrain_epoch:
-                    if eval_validity > best_validity:
-                        best_validity = eval_validity
+                    if total_loss < best_loss:
+                        best_loss = total_loss
                         G_path = os.path.join(self.args.model_save_dir, 'best-G.ckpt')
                         D_path = os.path.join(self.args.model_save_dir, 'best-D.ckpt')
                         torch.save(self.G.state_dict(), G_path)
@@ -294,8 +293,7 @@ class GCFGAN(object):
                 x = x.to(self.device)
                 # 得到反事实标签
                 batch_size = adj.shape[0]
-                with torch.no_grad():
-                    p_y_label = self.pred_model(x, adj)['y_pred'].argmax(dim=1).view(-1, 1).detach()
+                p_y_label = self.pred_y[orin_index]
                 p_y_label = self.label2onehot(p_y_label, self.args.num_class)
                 # 创建反事实标签
                 y_cf_label = self.create_cf_label(p_y_label)
@@ -305,6 +303,17 @@ class GCFGAN(object):
                 self.setup_seed()
                 z = self.sample_z(batch_size).to(self.device)
                 adj_reconst = self.G(adj, x, z, y_cf_label)
+
+                # 计算loss
+
+                g_dis_loss = distance_graph_prob(adj, adj_reconst)
+                p_y_pred_test = self.pred_model(x, adj_reconst)['y_pred']  # n x num_class
+                loss_cf = F.nll_loss(F.log_softmax(p_y_pred_test, dim=-1),
+                                     y_cf.detach().view(-1).long())
+                logits_fake_ture = self.D(adj_reconst, x, y_cf_label)
+                g_loss_fake_ture = -torch.mean(logits_fake_ture)
+
+                total_loss = g_dis_loss + loss_cf + g_loss_fake_ture
                 c_adj = torch.bernoulli(adj_reconst)
                 g_value = self.D(c_adj, x, y_cf_label)
                 eval_results_all['g_value'] = torch.mean(g_value)
@@ -317,8 +326,15 @@ class GCFGAN(object):
                                'y_cf': y_cf, 'y_cf_pred': y_cf_pred,
                                'metrics': self.args.metrics, 'device': self.args.device}
                 eval_results_all.update(evaluate(eval_params))
+                eval_results_all.update({'total_loss': total_loss})
 
         return eval_results_all
+
+    def run(self, index_dict):
+        self.create_data_loader(index_dict)
+        self.build_model()
+        self.get_prediction()
+        self.train()
 
     def sample_z(self, batch_size):
 
@@ -354,6 +370,11 @@ class GCFGAN(object):
         print(model)
         print(name)
         print("The number of parameters: {}".format(num_params))
+
+    @staticmethod
+    def create_cf_label(p_y_label):
+        if int(p_y_label.shape[1]) == 2:
+            return 1 - p_y_label
 
 
 class Discriminator(nn.Module):

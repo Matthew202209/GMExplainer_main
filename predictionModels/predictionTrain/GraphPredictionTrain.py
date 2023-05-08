@@ -77,7 +77,7 @@ class GraphPredictionTrain:
                 x_dim=self.num_features,
                 h_dim=self.args.h_dim,
                 num_class=self.args.num_classes,
-                dataset=self.args.data_set
+                dataset=self.args.dataset_name
             ).to(self.device)
 
     def set_optimizer(self):
@@ -103,16 +103,21 @@ class GraphPredictionTrain:
         test_idx = idx_test_list[0]
 
         if self.args.dataset_name == 'Tox21_ahr':
-            Dataset = MolecularDataset
-        elif self.args.dataset_name == 'ogbg_molhiv' or self.args.dataset_name == 'imdb_b':
-            Dataset = GraphPredModel
-
-        self.train_loader = select_molecular_dataloader(_data, train_idx, Dataset, batch_size=args.batch_size,
-                                                        num_workers=0)
-        self.val_loader = select_molecular_dataloader(_data, val_idx, Dataset, batch_size=args.batch_size,
-                                                      num_workers=0)
-        self.test_loader = select_molecular_dataloader(_data, test_idx, Dataset, batch_size=args.batch_size,
-                                                       num_workers=0)
+            self.train_loader = select_molecular_dataloader(_data, train_idx, MolecularDataset,
+                                                            batch_size=args.batch_size,
+                                                            num_workers=0)
+            self.val_loader = select_molecular_dataloader(_data, val_idx, MolecularDataset, batch_size=args.batch_size,
+                                                          num_workers=0)
+            self.test_loader = select_molecular_dataloader(_data, test_idx, MolecularDataset,
+                                                           batch_size=args.batch_size,
+                                                           num_workers=0)
+        elif self.args.dataset_name == 'ogng_molhiv' or self.args.dataset_name == 'imdb_m':
+            self.train_loader = select_dataloader(_data, train_idx, CausalDataset, batch_size=args.batch_size,
+                                                  num_workers=0)
+            self.val_loader = select_dataloader(_data, val_idx, CausalDataset, batch_size=args.batch_size,
+                                                num_workers=0)
+            self.test_loader = select_dataloader(_data, test_idx, CausalDataset, batch_size=args.batch_size,
+                                                 num_workers=0)
 
     def train(self):
         print("start training!")
@@ -273,7 +278,7 @@ def set_config(args, config):
 
 
 if __name__ == '__main__':
-    config = PredictionModelConfig.Tox21_classifier_config
+    config = PredictionModelConfig.Ogng_classifier_config
     args = init_prediction_args()
     set_config(args, config)
     gpt = GraphPredictionTrain(args)
