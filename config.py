@@ -8,8 +8,8 @@ def get_args():
     # datafile setting
     parser.add_argument('--data_path', type=str, default=r'D:\ProjectCodes\GMExplainer\data')
     parser.add_argument('--task_type', type=str, default=r'graph_classification')
-    parser.add_argument('--data_type', type=str, default=r'causal')
-    parser.add_argument('--dataset_name', type=str, default=r'imdb_m')
+    parser.add_argument('--data_type', type=str, default=r'realworld')
+    parser.add_argument('--dataset_name', type=str, default=r'Tox21_ahr')
     # model checkpoint
     parser.add_argument('--models_save_path', type=str, default=r'.\models_save')
     parser.add_argument('--exp_type', type=str, default=r'prediction')
@@ -17,8 +17,8 @@ def get_args():
     parser.add_argument('--batch_size', type=int, default=100)
     parser.add_argument('--dim_h', type=int, default=32)
     parser.add_argument('--num_class', type=int, default=2)
-    parser.add_argument('--epochs', type=int, default=1000)
-    parser.add_argument('--lr', type=int, default=1e-3)
+    parser.add_argument('--epochs', type=int, default=5000)
+    parser.add_argument('--lr', type=int, default=1e-4)
     parser.add_argument('--weight_decay', type=float, default=1e-5,
                         help='weight decay')
     args = parser.parse_args()
@@ -33,7 +33,7 @@ def get_args_for_gcf_gan():
     parser.add_argument('--data_path', type=str, default=r'D:\ProjectCodes\GMExplainer\data')
     parser.add_argument('--task_type', type=str, default=r'graph_classification')
     parser.add_argument('--data_type', type=str, default=r'causal')
-    parser.add_argument('--dataset_name', type=str, default=r'imdb_m')
+    parser.add_argument('--dataset_name', type=str, default=r'ogng_molhiv')
     parser.add_argument('--used_dataset', type=str, default=r'CausalDataset')
     # training setting
     parser.add_argument('--batch_size', type=int, default=128)
@@ -55,8 +55,8 @@ def get_args_for_gcf_gan():
 
     parser.add_argument('--d_graph_pool_type', type=str, default='mean')
     # generator setting
-    parser.add_argument('--pretrain_epoch', type=int, default=1)
-    parser.add_argument('--train_similar_epoch', type=int, default=9000)
+    parser.add_argument('--pretrain_epoch', type=int, default=10000)
+    parser.add_argument('--train_dis_epoch', type=int, default=15000)
     parser.add_argument('--z_dim', type=int, default=8)
     parser.add_argument('--n_critic', type=int, default=5)
     parser.add_argument('--conv_dims', default=[64, 128])

@@ -23,8 +23,9 @@ from sklearn.metrics import f1_score, roc_auc_score, accuracy_score
 
 from config import get_args
 from dataset.CausalDataset import CausalDataset
+from dataset.MolecularDataset import MolecularDataset
 from predictionModels.modelPool.GraphsPrediction import Graph_pred_model
-from utils.LoadData import get_data_path, load_data, select_dataloader
+from utils.LoadData import get_data_path, load_data, select_dataloader, create_experiment, select_molecular_dataloader
 
 sys.path.append('../')
 torch.backends.cudnn.enabled = False
@@ -56,10 +57,10 @@ parser.add_argument('--weight_decay', type=float, default=1e-5,
 args = parser.parse_args()
 
 # select gpu if available
-args.cuda = not args.nocuda and torch.cuda.is_available()
-device = torch.device("cpu")
-args.device = device
-
+if args.cuda and torch.cuda.is_available():
+    device = torch.device("cuda:0")
+else:
+    device = torch.device("cpu")
 print('using device: ', device)
 
 # seed
@@ -164,7 +165,7 @@ def test(params):
 
         features = data['features'].float().to(device)
         adj = data['adj'].float().to(device)
-        u = data['u'].float().to(device)
+        # u = data['u'].float().to(device)
         labels = data['labels'].float().to(device)
         orin_index = data['index']
 
@@ -223,23 +224,28 @@ if __name__ == '__main__':
     args = get_args()
     data_path = get_data_path(args)
     data = load_data(data_path)
-
-    train_idx = data['train_idx']
-    val_idx = data['val_idex']
-    test_idx = data['test_idx']
-
-    train_node_num = data['train_node_num']
-    val_node_num = data['val_node_num']
-    test_node_num = data['test_node_num']
-
-    train_loader = select_dataloader(data, train_idx, CausalDataset, batch_size=args.batch_size,
-                                     num_workers=0, padded=False)
-    val_loader = select_dataloader(data, val_idx, CausalDataset, batch_size=args.batch_size,
-                                     num_workers=0, padded=False)
-    test_loader = select_dataloader(data, test_idx, CausalDataset, batch_size=args.batch_size,
-                                     num_workers=0, padded=False)
+    num_data = len(data['adj_list'])
+    idx_train_list, idx_val_list, idx_test_list = create_experiment(1, num_data)
+    train_idx = idx_train_list[0]
+    val_idx = idx_val_list[0]
+    test_idx = idx_test_list[0]
 
 
+    # train_idx = data['train_idx']
+    # val_idx = data['val_idex']
+    # test_idx = data['test_idx']
+    #
+    # train_node_num = data['train_node_num']
+    # val_node_num = data['val_node_num']
+    # test_node_num = data['test_node_num']
+    #
+    train_loader = select_molecular_dataloader(data, train_idx, MolecularDataset, batch_size=args.batch_size,
+                                     num_workers=0)
+    val_loader = select_molecular_dataloader(data, val_idx, MolecularDataset, batch_size=args.batch_size,
+                                     num_workers=0)
+    test_loader = select_molecular_dataloader(data, test_idx, MolecularDataset, batch_size=args.batch_size,
+                                     num_workers=0)
+    #
     metrics = ['Accuracy', 'AUC-ROC', 'F1-score']
     x_dim = data["features_list"][0].shape[1]
     max_num_nodes = data["adj_list"][0].shape[1]
@@ -253,19 +259,19 @@ if __name__ == '__main__':
                     'train_loader': train_loader, 'val_loader': val_loader, 'test_loader': test_loader,
                     'dataset': args.dataset_name, 'metrics': metrics, 'save_model': True}
     train(train_params)
-    #
+
     # test
     # model = models.GraphCFE(init_params=init_params, args=args).to(device)
     # model.load_state_dict(torch.load(model_path + f'weights_graphCFE_{args.dataset}_exp' + str(exp_i) + '.pt'))
-
-    test_params = {'model': model, 'dataset': args.dataset_name, 'data_loader': test_loader, 'metrics': metrics}
-    eval_results = test(test_params)
-
-    for k in eval_results:
-        if isinstance(eval_results[k], list):
-            print(k, ": ", eval_results[k])
-        else:
-            print(k, f": {eval_results[k]:.4f}")
+    #
+    # test_params = {'model': model, 'dataset': args.dataset_name, 'data_loader': test_loader, 'metrics': metrics}
+    # eval_results = test(test_params)
+    #
+    # for k in eval_results:
+    #     if isinstance(eval_results[k], list):
+    #         print(k, ": ", eval_results[k])
+    #     else:
+    #         print(k, f": {eval_results[k]:.4f}")
 
 
 
