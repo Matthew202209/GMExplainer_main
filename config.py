@@ -39,12 +39,12 @@ def get_args_for_gcf_gan():
     parser.add_argument('--data_path', type=str, default=r'D:\ProjectCodes\GMExplainer\data')
     parser.add_argument('--task_type', type=str, default=r'graph_classification')
     parser.add_argument('--data_type', type=str, default=r'causal')
-    parser.add_argument('--dataset_name', type=str, default=r'ogng_molhiv')
+    parser.add_argument('--dataset_name', type=str, default=r'imdb_m')
     parser.add_argument('--used_dataset', type=str, default=r'CausalDataset')
     # training setting
     parser.add_argument('--batch_size', type=int, default=128)
     parser.add_argument('--encode_h_dim', type=int, default=32)
-    parser.add_argument('--num_epoches_lr_decay', type=int, default=10000)
+    parser.add_argument('--num_epoches_lr_decay', type=int, default=1000)
     parser.add_argument('--lr_update_step', type=int, default=100)
     parser.add_argument('--num_class', type=int, default=2)
     parser.add_argument('--seed', type=int, default=1, metavar='S',
@@ -53,7 +53,7 @@ def get_args_for_gcf_gan():
     parser.add_argument('--opt', type=str, default='RMSprop')
 
     # discriminator setting
-    parser.add_argument('--epoches', type=int, default=30000)
+    parser.add_argument('--epoches', type=int, default=15000)
     parser.add_argument('--d_train_t', type=int, default=1)
     parser.add_argument('--d_dropout', type=float, default=0.4)
     parser.add_argument('--d_lr', type=float, default=0.001)
@@ -61,10 +61,10 @@ def get_args_for_gcf_gan():
 
     parser.add_argument('--d_graph_pool_type', type=str, default='mean')
     # generator setting
-    parser.add_argument('--pretrain_epoch', type=int, default=10000)
-    parser.add_argument('--train_dis_epoch', type=int, default=15000)
+    parser.add_argument('--pretrain_epoch', type=int, default=8000)
+    parser.add_argument('--train_dis_epoch', type=int, default=10000)
     parser.add_argument('--z_dim', type=int, default=8)
-    parser.add_argument('--n_critic', type=int, default=5)
+    parser.add_argument('--n_critic', type=int, default=3)
     parser.add_argument('--conv_dims', default=[64, 128])
     parser.add_argument('--g_dropout', type=float, default=0.4)
     parser.add_argument('--g_lr', type=float, default=0.005)
@@ -81,6 +81,7 @@ def get_args_for_gcf_gan():
     parser.add_argument('--metrics', default=['validity', 'proximity'])
     # save
     parser.add_argument('--model_save_dir', type=str, default=r'D:\ProjectCodes\GMExplainer\models_save\explanation')
+    parser.add_argument('--expr', type=str, default=r'1')
     args = parser.parse_args()
     return args
 

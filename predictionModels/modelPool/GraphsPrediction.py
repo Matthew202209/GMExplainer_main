@@ -73,8 +73,9 @@ class MolecularClassifier(torch.nn.Module):
 
 
 class GraphPredModel(nn.Module):
-    def __init__(self, x_dim, h_dim, num_class, dataset='synthetic'):
+    def __init__(self, x_dim, h_dim, num_class, device, dataset='synthetic'):
         super(GraphPredModel, self).__init__()
+        self.device = device
         self.num_graph_models = 3
         self.dataset = dataset
         self.graph_model = nn.ModuleList([DenseGraphConv(x_dim, h_dim) for i in range(self.num_graph_models)])
@@ -96,8 +97,8 @@ class GraphPredModel(nn.Module):
 
     def forward(self, x, adj):
         if self.dataset == 'synthetic' or self.dataset == 'community' or self.dataset == 'imdb_b':
-            x = torch.ones_like(x).to(device)
-        elif self.dataset == 'ogbg_molhiv':
+            x = torch.ones_like(x).to(self.device)
+        elif self.dataset == 'ogng_molhiv':
             x = x.clone()
             x[:, :, 2:] = 0.
             x[:, :, 0] = 0.

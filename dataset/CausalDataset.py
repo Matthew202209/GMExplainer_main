@@ -3,7 +3,7 @@ import torch
 
 
 class CausalDataset(torch.utils.data.Dataset):
-    def __init__(self, adj_all, features_all, u_all, labels_all, index, padded=False):
+    def __init__(self, adj_all, features_all, u_all, labels_all, num_node_real, index, padded=False):
         # the input adj_all must be unpadded
         self.max_num_nodes = adj_all[0].shape[0]
         self.adj_all = adj_all
@@ -12,9 +12,8 @@ class CausalDataset(torch.utils.data.Dataset):
         self.u_all = u_all
         self.labels_all = labels_all
         self.padded = padded
+        self.num_node_real = num_node_real
         self.index = index
-        for adj in adj_all:
-            self.len_all.append(adj.shape[0])
         if padded:
             self.adj_all = padding_graphs(adj_all, self.max_num_nodes)
             self.feature_all = padding_features(features_all, self.max_num_nodes)

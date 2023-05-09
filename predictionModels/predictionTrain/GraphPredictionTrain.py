@@ -77,6 +77,7 @@ class GraphPredictionTrain:
                 x_dim=self.num_features,
                 h_dim=self.args.h_dim,
                 num_class=self.args.num_classes,
+                device=self.device,
                 dataset=self.args.dataset_name
             ).to(self.device)
 
