@@ -8,113 +8,171 @@ import torch.nn.functional as F
 import numpy as np
 import torch.optim as optim
 from torch.nn.utils import clip_grad_norm
-from utils.utils import get_degree_matrix
-from .gcn_perturb import GCNSyntheticPerturb
-from utils.utils import normalize_adj
+from torch.nn.parameter import Parameter
+
+
+class Perturb(nn.Module):
+    def __init__(self, adj, edge_additions):
+        super(Perturb, self).__init__()
+
+        self.P = None
+        self.adj = adj
+        self.num_nodes = self.adj.shape[0]
+        self.edge_additions = edge_additions  # are edge additions included in perturbed matrix
+
+        # P_hat needs to be symmetric ==> learn vector representing entries in upper/lower triangular matrix and use to populate P_hat later
+        self.P_vec_size = int((self.num_nodes * self.num_nodes - self.num_nodes) / 2) + self.num_nodes
+
+        if self.edge_additions:
+            self.P_vec = Parameter(torch.FloatTensor(torch.zeros(self.P_vec_size)))
+        else:
+            self.P_vec = Parameter(torch.FloatTensor(torch.ones(self.P_vec_size)))
+        self.P_hat_symm = None
+        self.reset_parameters()
+
+    def reset_parameters(self, eps=10 ** -4):
+        # Think more about how to initialize this
+        with torch.no_grad():
+            if self.edge_additions:
+                adj_vec = create_vec_from_symm_matrix(self.adj).numpy()
+                for i in range(len(adj_vec)):
+                    if i < 1:
+                        adj_vec[i] = adj_vec[i] - eps
+                    else:
+                        adj_vec[i] = adj_vec[i] + eps
+                torch.add(self.P_vec, torch.FloatTensor(adj_vec))  # self.P_vec is all 0s
+            else:
+                torch.sub(self.P_vec, eps)
+
+    def forward(self, adj):
+        # Same as normalize_adj in utils.py except includes P_hat in A_tilde
+        self.P_hat_symm = create_symm_matrix_from_vec(self.P_vec, self.num_nodes)  # Ensure symmetry
+
+        A_tilde = torch.FloatTensor(self.num_nodes, self.num_nodes)
+        A_tilde.requires_grad = True
+
+        if self.edge_additions:  # Learn new adj matrix directly
+            A_tilde = F.sigmoid(self.P_hat_symm) + torch.eye(self.num_nodes)  # Use sigmoid to bound P_hat in [0,1]
+        else:  # Learn P_hat that gets multiplied element-wise with adj -- only edge deletions
+            A_tilde = F.sigmoid(self.P_hat_symm) * adj
+
+        return A_tilde
+
+    def discrete(self):
+        self.P = (F.sigmoid(self.P_hat_symm) >= 0.5).float()  # threshold P_hat
+        if self.edge_additions:
+            A_tilde = self.P + torch.eye(self.num_nodes)
+        else:
+            A_tilde = self.P * self.adj + torch.eye(self.num_nodes)
+        return A_tilde, self.P
 
 
 class CFExplainer:
-	"""
-	CF Explainer class, returns counterfactual subgraph
-	"""
-	def __init__(self, model, sub_adj, sub_feat, n_hid, dropout,
-	              sub_labels, y_pred_orig, num_classes, beta, device):
-		super(CFExplainer, self).__init__()
-		self.model = model
-		self.model.eval()
-		self.sub_adj = sub_adj
-		self.sub_feat = sub_feat
-		self.n_hid = n_hid
-		self.dropout = dropout
-		self.sub_labels = sub_labels
-		self.y_pred_orig = y_pred_orig
-		self.beta = beta
-		self.num_classes = num_classes
-		self.device = device
 
-		# Instantiate CF model class, load weights from original model
-		self.cf_model = GCNSyntheticPerturb(self.sub_feat.shape[1], n_hid, n_hid,
-		                                    self.num_classes, self.sub_adj, dropout, beta)
+    def __init__(self, args, pre_model, adj, features):
+        super(CFExplainer, self).__init__()
 
-		self.cf_model.load_state_dict(self.model.state_dict(), strict=False)
+        self.pre_model = pre_model
+        self.pre_model.eval()
+        self.args = args
+        self.adj = adj
+        self.features = features
+        self.beta = args.beta
+        self.num_classes = args.num_classes
+        self.device = args.device
+        self.lr = args.lr
+        self.edge_additions =args.edge_additions
+        self.perturb = Perturb(self.adj, args.edge_additions)
+        self.pre_y = None
+        self.cf_pre_y = None
+        self.cf_optimizer = None
+        self.P = None
 
-		# Freeze weights from original model in cf_model
-		for name, param in self.cf_model.named_parameters():
-			if name.endswith("weight") or name.endswith("bias"):
-				param.requires_grad = False
-		for name, param in self.model.named_parameters():
-			print("orig model requires_grad: ", name, param.requires_grad)
-		for name, param in self.cf_model.named_parameters():
-			print("cf model requires_grad: ", name, param.requires_grad)
+    def set_cf_optimizer(self):
+        if self.args.cf_optimizer_type == "SGD" and self.args.n_momentum == 0.0:
+            self.cf_optimizer = optim.SGD(self.perturb.parameters(), lr=self.lr)
+        elif self.args.cf_optimizer_type == "SGD" and self.args.n_momentum != 0.0:
+            self.cf_optimizer = optim.SGD(self.perturb.parameters(), lr=self.lr,
+                                          nesterov=True, momentum=self.args.n_momentum.n_momentum)
+        elif self.args.cf_optimizer_type == "Adadelta":
+            self.cf_optimizer = optim.Adadelta(self.perturb.parameters(), lr=self.lr)
+
+    def get_origin_y(self):
+        self.pre_y = self.pre_model(self.features, self.adj)['y_pred'].argmax(dim=1).view(-1, 1).detach()
+
+    def create_cf_label(self):
+        if self.num_classes == 2:
+            self.cf_pre_y = 1 - self.num_classes
+
+    def explain(self):
+        self.get_origin_y()
+        self.create_cf_label()
+        best_cf_example = None
+        best_loss = np.inf
+        for epoch in range(self.args.num_epochs):
+            new_example, loss_total = self.train(epoch)
+            if new_example != [] and loss_total < best_loss:
+                best_cf_example = new_example[0]
+                best_loss = loss_total
+
+        return best_cf_example
+
+    def loss(self, output, y_pred_orig, y_pred_new_actual):
+        pred_same = (y_pred_new_actual == y_pred_orig).float()
+
+        # Need dim >=2 for F.nll_loss to work
+        output = output.unsqueeze(0)
+        y_pred_orig = y_pred_orig.unsqueeze(0)
+
+        if self.edge_additions:
+            cf_adj = self.P
+        else:
+            cf_adj = self.P * self.adj
+        cf_adj.requires_grad = True  # Need to change this otherwise loss_graph_dist has no gradient
+
+        # Want negative in front to maximize loss instead of minimizing it to find CFs
+        loss_pred = - F.nll_loss(output, y_pred_orig)
+        loss_graph_dist = sum(sum(abs(cf_adj - self.adj))) / 2  # Number of edges changed (symmetrical)
+
+        # Zero-out loss_pred with pred_same if prediction flips
+        loss_total = pred_same * loss_pred + self.beta * loss_graph_dist
+        return loss_total, loss_pred, loss_graph_dist, cf_adj
+
+    def train(self, epoch):
+        global cf_stats
+        t = time.time()
+        self.perturb.train()
+        self.cf_optimizer.zero_grad()
+        p_adj = self.perturb.forward(self.adj)
+        p_discrete_adj, self.P = self.perturb.discrete()
+
+        output = self.pre_model(self.features, p_adj)
+        output_actual = self.pre_model(self.features, p_discrete_adj)
+        y_pred_new = torch.argmax(output)
+        y_pred_new_actual = torch.argmax(output_actual)
+        loss_total, loss_pred, loss_graph_dist, cf_adj = self.loss(output,  self.pre_y, y_pred_new_actual)
+
+        loss_total.backward()
+        clip_grad_norm(self.perturb.parameters(), 2.0)
+        self.cf_optimizer.step()
+        if y_pred_new_actual != self.pre_y or epoch == self.args.num_epochs:
+            cf_stats = [cf_adj.detach().numpy(), self.adj.detach().numpy(),
+                        self.pre_y.item(), y_pred_new.item(),
+                        y_pred_new_actual.item(),
+                        self.adj.shape[0], loss_total.item(),
+                        loss_pred.item(), loss_graph_dist.item(), epoch]
+        return cf_stats, loss_total.item()
 
 
-
-	def explain(self, cf_optimizer, node_idx, new_idx, lr, n_momentum, num_epochs):
-		self.node_idx = node_idx
-		self.new_idx = new_idx
-
-		self.x = self.sub_feat
-		self.A_x = self.sub_adj
-		self.D_x = get_degree_matrix(self.A_x)
-
-		if cf_optimizer == "SGD" and n_momentum == 0.0:
-			self.cf_optimizer = optim.SGD(self.cf_model.parameters(), lr=lr)
-		elif cf_optimizer == "SGD" and n_momentum != 0.0:
-			self.cf_optimizer = optim.SGD(self.cf_model.parameters(), lr=lr, nesterov=True, momentum=n_momentum)
-		elif cf_optimizer == "Adadelta":
-			self.cf_optimizer = optim.Adadelta(self.cf_model.parameters(), lr=lr)
+def create_vec_from_symm_matrix(matrix):
+    idx = torch.tril_indices(matrix.shape[0], matrix.shape[0])
+    vector = matrix[idx[0], idx[1]]
+    return vector
 
 
-		best_cf_example = []
-		best_loss = np.inf
-		num_cf_examples = 0
-		for epoch in range(num_epochs):
-			new_example, loss_total = self.train(epoch)
-			if new_example != [] and loss_total < best_loss:
-				best_cf_example.append(new_example)
-				best_loss = loss_total
-				num_cf_examples += 1
-		print("{} CF examples for node_idx = {}".format(num_cf_examples, self.node_idx))
-		print(" ")
-		return(best_cf_example)
-
-
-	def train(self, epoch):
-		t = time.time()
-		self.cf_model.train()
-		self.cf_optimizer.zero_grad()
-
-		# output uses differentiable P_hat ==> adjacency matrix not binary, but needed for training
-		# output_actual uses thresholded P ==> binary adjacency matrix ==> gives actual prediction
-		output = self.cf_model.forward(self.x, self.A_x)
-		output_actual, self.P = self.cf_model.forward_prediction(self.x)
-
-		# Need to use new_idx from now on since sub_adj is reindexed
-		y_pred_new = torch.argmax(output[self.new_idx])
-		y_pred_new_actual = torch.argmax(output_actual[self.new_idx])
-
-		# loss_pred indicator should be based on y_pred_new_actual NOT y_pred_new!
-		loss_total, loss_pred, loss_graph_dist, cf_adj = self.cf_model.loss(output[self.new_idx], self.y_pred_orig, y_pred_new_actual)
-		loss_total.backward()
-		clip_grad_norm(self.cf_model.parameters(), 2.0)
-		self.cf_optimizer.step()
-		print('Node idx: {}'.format(self.node_idx),
-		      'New idx: {}'.format(self.new_idx),
-			  'Epoch: {:04d}'.format(epoch + 1),
-		      'loss: {:.4f}'.format(loss_total.item()),
-		      'pred loss: {:.4f}'.format(loss_pred.item()),
-		      'graph loss: {:.4f}'.format(loss_graph_dist.item()))
-		print('Output: {}\n'.format(output[self.new_idx].all_data),
-		      'Output nondiff: {}\n'.format(output_actual[self.new_idx].all_data),
-		      'orig pred: {}, new pred: {}, new pred nondiff: {}'.format(self.y_pred_orig, y_pred_new, y_pred_new_actual))
-		print(" ")
-		cf_stats = []
-		if y_pred_new_actual != self.y_pred_orig:
-			cf_stats = [self.node_idx.item(), self.new_idx.item(),
-			            cf_adj.detach().numpy(), self.sub_adj.detach().numpy(),
-			            self.y_pred_orig.item(), y_pred_new.item(),
-			            y_pred_new_actual.item(), self.sub_labels[self.new_idx].numpy(),
-			            self.sub_adj.shape[0], loss_total.item(),
-			            loss_pred.item(), loss_graph_dist.item()]
-
-		return(cf_stats, loss_total.item())
+def create_symm_matrix_from_vec(vector, n_rows):
+    matrix = torch.zeros(n_rows, n_rows)
+    idx = torch.tril_indices(n_rows, n_rows)
+    matrix[idx[0], idx[1]] = vector
+    symm_matrix = torch.tril(matrix) + torch.tril(matrix, -1).t()
+    return symm_matrix

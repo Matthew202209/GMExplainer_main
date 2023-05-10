@@ -65,14 +65,14 @@ class GraphPredictionTrain:
 
     def set_model(self):
         self.set_seed()
-        if self.args.model == 'MolecularClassifier':
+        if self.args.pre_model == 'MolecularClassifier':
             self.pre_model = MolecularClassifier(
                 x_dim=self.num_features,
                 h_dim=self.args.h_dim,
                 num_class=self.args.num_classes,
                 dropout=self.args.dropout
             ).to(self.device)
-        elif self.args.model == 'GraphPredModel':
+        elif self.args.pre_model == 'GraphPredModel':
             self.pre_model = GraphPredModel(
                 x_dim=self.num_features,
                 h_dim=self.args.h_dim,
@@ -268,7 +268,7 @@ def set_config(args, config):
     args.dataset_name = config['dataset_name']
     args.models_save_path = config['models_save_path']
     args.exp_type = config['exp_type']
-    args.model = config['model']
+    args.pre_model = config['model']
     args.batch_size = config['batch_size']
     args.dim_h = config['dim_h']
     args.num_class = config['num_class']

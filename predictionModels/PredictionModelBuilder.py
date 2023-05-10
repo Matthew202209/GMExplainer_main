@@ -3,7 +3,7 @@ import torch
 from predictionModels.modelPool.GraphsPrediction import GraphPredModel, MolecularClassifier
 
 
-def build_prediction_model(args, x_dim, max_num_nodes):
+def build_prediction_model(args, x_dim):
     global pred_model
     if args.prediction_model == 'graph_classification':
         pred_model = GraphPredModel(x_dim, args.p_h_dim, args.p_num_class, args.device, args.dataset_name)

@@ -44,7 +44,7 @@ def init_args_gcf_gan():
     # training setting
     parser.add_argument('--batch_size', type=int, default=512)
     parser.add_argument('--encode_h_dim', type=int, default=32)
-    parser.add_argument('--num_epoches_lr_decay', type=int, default=1000)
+    parser.add_argument('--num_epoches_lr_decay', type=int, default=500)
     parser.add_argument('--lr_update_step', type=int, default=100)
     parser.add_argument('--num_class', type=int, default=2)
     parser.add_argument('--seed', type=int, default=1, metavar='S',
@@ -80,13 +80,15 @@ def init_args_gcf_gan():
     parser.add_argument('--metrics', default=['validity', 'proximity'])
     # save
     parser.add_argument('--model_save_dir', type=str, default=r'D:\ProjectCodes\GMExplainer\models_save\explanation')
+    parser.add_argument('--log_save_dir', type=str, default=r'D:\ProjectCodes\GMExplainer\logs')
+    parser.add_argument('--results_save_dir', type=str, default=r'D:\ProjectCodes\GMExplainer\results')
     parser.add_argument('--expr', type=str, default=r'1')
     args = parser.parse_args()
     return args
 
 
 gcfgan_config_dict = {
-    'imdb_m':{
+    'imdb_m': {
         'task_type': r"graph_classification",
         'data_type': r'causal',
         'dataset_name': r'imdb_m',
@@ -94,12 +96,12 @@ gcfgan_config_dict = {
         # training setting
         'batch_size': 256,
         'num_class': 2,
-        'epoches': 10000,
+        'epoches': 15000,
         # discriminator setting
         'd_lr': 0.001,
         # generator setting
         'pretrain_epoch': 4000,
-        'train_dis_epoch': 6000,
+        'train_dis_epoch': 8000,
         'lamda_cf': 3,
         'g_lr': 0.001,
         # prediction model setting
@@ -139,15 +141,15 @@ gcfgan_config_dict = {
         'used_dataset' :r'MolecularDataset',
         # training setting
         'batch_size': 64,
-        'num_class':2,
-        'epoches': 10000,
+        'num_class': 2,
+        'epoches': 5000,
         # discriminator setting
         'd_lr': 0.001,
         # generator setting
-        'pretrain_epoch': 4000,
-        'train_dis_epoch': 6000,
+        'pretrain_epoch': 2000,
+        'train_dis_epoch': 4000,
         'g_lr': 0.001,
-        'lamda_cf': 10,
+        'lamda_cf': 12,
         # prediction model setting
         'p_h_dim': 32,
         'p_num_class': 2,

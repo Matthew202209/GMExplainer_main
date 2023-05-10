@@ -55,9 +55,11 @@ def get_expr_config(args, config, explainer):
     return args
 
 
-def run_train_explainer(explainer, dataset_name):
+def run_train_explainer(explainer, dataset_name, expr=0):
+
     if explainer == 'gcfgan':
         args = get_expr_config(init_args_gcf_gan(), gcfgan_config_dict[dataset_name], explainer)
+        args.expr = expr
         index_dict = get_experiment(args, args.expr)
         data_path = get_data_path(args)
         data = load_data(data_path)

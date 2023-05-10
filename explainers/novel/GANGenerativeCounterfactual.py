@@ -1,6 +1,9 @@
 import argparse
+import pickle
 import time
 import datetime
+
+import pandas as pd
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -54,6 +57,8 @@ class GCFGAN(object):
         self.G = None
         self.P = None
         self.pred_model = None
+
+        self.test_result = {'validity': [], 'proximity': []}
         # 地址
         # self.model_save_dir = self.args.model_save_dir
 
@@ -123,7 +128,7 @@ class GCFGAN(object):
         self.D.to(self.device)
         self.G.to(self.device)
 
-        self.pred_model = build_prediction_model(self.args, x_dim, max_num_nodes)
+        self.pred_model = build_prediction_model(self.args, x_dim)
         self.pred_model = self.pred_model.to(self.device)
 
     def test(self):
@@ -133,7 +138,6 @@ class GCFGAN(object):
         global d_loss_real, d_loss_fake, d_loss, g_loss_cfe, g_loss, \
             g_dis_loss, adj, x, adj_reconst, orin_index, g_loss_fake_ture, p_y_cf_label, num_node_real
         data_loader = self.dataloader['train']
-        best_validity = -1
         print('Start training...')
         # 生成反事实标签
         time_begin = time.time()
@@ -145,7 +149,19 @@ class GCFGAN(object):
             self.D.train()
             self.G.train()
             self.pred_model.eval()
-            #
+            # log discriminator
+            _d_loss_real_ture = 0.
+            _d_loss_real_false = 0.
+            _d_loss_fake = 0.
+            _loss_total = 0.
+            d_n = 0
+
+            # log generator
+            _g_loss = 0.
+            _dis_loss = 0.
+            _loss_cf = 0.
+            g_n = 0
+
             # =================================================================================== #
             #                             1. Prepare data                                         #
             # =================================================================================== #
@@ -189,10 +205,11 @@ class GCFGAN(object):
 
                 for p in self.D.parameters():
                     p.data.clamp_(-self.args.clip_value, self.args.clip_value)
-                self.D.progress['D/d_loss_real_ture'] += [d_loss_real_ture.item()]
-                self.D.progress['D/d_loss_real_false'] += [d_loss_real_false.item()]
-                self.D.progress['D/d_loss_fake'] += [d_loss_fake.item()]
-                self.D.progress['D/loss_total'] += [d_loss.item()]
+                _d_loss_real_ture = _d_loss_real_ture + d_loss_real_ture.item()
+                _d_loss_real_false = _d_loss_real_false + d_loss_real_false.item()
+                _d_loss_fake = _d_loss_fake + d_loss_fake.item()
+                _loss_total = _loss_total + d_loss.item()
+                d_n = d_n + 1
 
                 # =================================================================================== #
                 #                             3. Train the generator                                  #
@@ -205,13 +222,9 @@ class GCFGAN(object):
                         adj_reconst = self.G(adj, x, z, p_y_cf_label)
                         logits_fake = self.D(adj_reconst, x, p_y_cf_label)
                         g_loss = -torch.mean(logits_fake)
-                        if 'G/g_loss' not in self.G.progress.keys():
-                            self.G.progress['G/g_loss'] = []
-                            self.G.progress['G/g_loss'] += [g_loss.item()]
-                        else:
-                            self.G.progress['G/g_loss'] += [g_loss.item()]
+                        _g_loss = _g_loss + g_loss.item()
+                        g_n = g_n + 1
                     else:
-
                         z = self.sample_z(self.args.batch_size)
                         adj_reconst = self.G(adj, x, z, p_y_cf_label)
                         # 假样本预测结果
@@ -219,33 +232,41 @@ class GCFGAN(object):
 
                         loss_cf = F.nll_loss(F.log_softmax(p_y_pred_fake, dim=-1),
                                              p_y_cf_label.argmax(dim=1).view(-1, 1).detach().view(-1).long())
-
-                        # p_y_cf_label = self.label2onehot(p_y_cf_label, self.args.num_class)
                         # 计算对抗损失
                         logits_fake_ture = self.D(adj_reconst, x, p_y_cf_label)
                         g_loss_fake_ture = -torch.mean(logits_fake_ture)
                         g_dis_loss = distance_graph_prob(adj, adj_reconst)
 
-                        self.G.progress['G/g_loss'] += [g_loss_fake_ture.item()]
                         if (epoch + 1) < self.args.train_dis_epoch:
                             g_loss = 0 * loss_cf + g_dis_loss + g_loss_fake_ture
-                            if 'G/dis_loss' not in self.G.progress.keys():
-                                self.G.progress['G/dis_loss'] = []
-                                self.G.progress['G/dis_loss'] += [g_dis_loss.item()]
-                            else:
-                                self.G.progress['G/dis_loss'] += [g_dis_loss.item()]
+                            _dis_loss = _dis_loss + g_dis_loss.item()
+                            _g_loss = _g_loss + g_loss_fake_ture.item()
+                            g_n = g_n + 1
                         else:
                             g_loss = self.args.lamda_cf * loss_cf + g_dis_loss + g_loss_fake_ture
-                            if 'G/loss_cf' not in self.G.progress.keys():
-                                self.G.progress['G/loss_cf'] = []
-                                self.G.progress['G/loss_cf'] += [loss_cf.item()]
-                                self.G.progress['G/dis_loss'] += [g_dis_loss.item()]
-                            else:
-                                self.G.progress['G/loss_cf'] += [loss_cf.item()]
-                                self.G.progress['G/dis_loss'] += [g_dis_loss.item()]
+                            _dis_loss = _dis_loss + g_dis_loss.item()
+                            _g_loss = _g_loss + g_loss_fake_ture.item()
+                            _loss_cf = _loss_cf + loss_cf.item()
+                            g_n = g_n + 1
+
                     self.reset_grad()
                     g_loss.backward()
                     self.G.optimizer.step()
+
+            self.D.progress['D/d_loss_real_ture'] += [_d_loss_real_ture / d_n]
+            self.D.progress['D/d_loss_real_false'] += [_d_loss_real_false / d_n]
+            self.D.progress['D/d_loss_fake'] += [_d_loss_fake / d_n]
+            self.D.progress['D/loss_total'] += [_loss_total / d_n]
+            if (epoch + 1) < self.args.pretrain_epoch:
+                self.G.progress['G/g_loss'] += [_g_loss / g_n]
+            else:
+                if (epoch + 1) < self.args.train_dis_epoch:
+                    self.G.progress['G/g_loss'] += [_g_loss / g_n]
+                    self.G.progress['G/dis_loss'] += [_dis_loss / g_n]
+                else:
+                    self.G.progress['G/g_loss'] += [_g_loss / g_n]
+                    self.G.progress['G/dis_loss'] += [_dis_loss / g_n]
+                    self.G.progress['G/loss_cf'] += [_loss_cf / g_n]
 
             # =================================================================================== #
             #                                 4. Miscellaneous                                    #
@@ -278,7 +299,7 @@ class GCFGAN(object):
                 print(p)
 
                 val_eval_results = self.evaluation(mode=f'val')
-                _ = self.evaluation(mode=f'test')
+                test_eval_results = self.evaluation(mode=f'test')
 
                 total_loss = val_eval_results['total_loss']
                 if (epoch + 1) >= self.args.train_dis_epoch:
@@ -290,6 +311,8 @@ class GCFGAN(object):
                         os.makedirs(save_dir)
                     if total_loss < best_loss:
                         best_loss = total_loss
+                        self.test_result['validity'] = test_eval_results['validity']
+                        self.test_result['proximity'] = test_eval_results['proximity']
                         G_path = os.path.join(save_dir, 'best-G.pt')
                         D_path = os.path.join(save_dir, 'best-D.pt')
                         torch.save(self.G.state_dict(), G_path)
@@ -368,12 +391,37 @@ class GCFGAN(object):
 
         return eval_results_all
 
+    def save_log(self):
+        log_dir = r'{}/gcfgan'.format(self.args.log_save_dir)
+        if not os.path.exists(log_dir):
+            os.makedirs(log_dir)
+        log_file = r'{}/{}-expr{}.pkl'.format(log_dir, self.args.dataset_name, str(self.args.expr))
+
+        D_progress = self.D.progress
+        G_progress = self.G.progress
+        progress = {'D_progress': D_progress, 'G_progress': G_progress}
+        f = open(log_file, 'wb')
+        pickle.dump(progress, f)
+        f.close()
+
+    def save_test_result(self):
+        results_dir = r'{}/gcfgan'.format(self.args.results_save_dir)
+
+        if not os.path.exists(results_dir):
+            os.makedirs(results_dir)
+        results_file = r'{}/{}-expr{}.csv'.format(results_dir,
+                                                  self.args.dataset_name,
+                                                  str(self.args.expr))
+        result_df = pd.DataFrame(pd.Series(self.test_result))
+        result_df.to_csv(results_file)
+
     def run(self, index_dict):
         self.create_data_loader(index_dict)
         self.build_model()
         self.get_prediction()
         self.train()
         self.save_log()
+        self.save_test_result()
 
     def sample_z(self, batch_size):
 
@@ -485,11 +533,9 @@ class Generator(nn.Module):
 
         # 计数器和进程记录
         self.counter = 0
-        self.progress = {'G/loss_fake': [],
-                         'G/loss_dis': [],
+        self.progress = {'G/g_loss': [],
                          'G/loss_cf': [],
-                         'G/loss_total': []
-                         }
+                         'G/dis_loss': []}
 
         if self.encoder_type == 'gcn':
             self.graph_model = DenseGCNConv(self.encode_x_dim, self.encode_h_dim)
