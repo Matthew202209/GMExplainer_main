@@ -1,13 +1,11 @@
 import numpy as np
 import torch
 
-
 class CausalDataset(torch.utils.data.Dataset):
-    def __init__(self, adj_all, features_all, u_all, labels_all, num_node_real, index, padded=False):
+    def __init__(self, adj_all, features_all, u_all, labels_all, num_node_real, max_num_node, index, padded=False):
         # the input adj_all must be unpadded
-        self.max_num_nodes = adj_all[0].shape[0]
-        self.adj_all = adj_all
-        self.len_all = []  # num of nodes (original, not padded)
+        self.max_num_nodes = max_num_node
+        self.adj_all = adj_all  # num of nodes (original, not padded)
         self.feature_all = features_all
         self.u_all = u_all
         self.labels_all = labels_all
@@ -27,7 +25,8 @@ class CausalDataset(torch.utils.data.Dataset):
                 'features': self.feature_all[idx].copy(),
                 'labels': self.labels_all[idx].copy(),
                 'u': self.u_all[idx].copy(),
-                'num_node_real': self.len_all[idx],
+                'max_num_node': self.max_num_nodes,
+                'num_node_real': self.num_node_real[idx],
                 'index': self.index[idx]
                 }
 

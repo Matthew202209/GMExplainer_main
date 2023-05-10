@@ -8,11 +8,13 @@ def evaluate(eval_params):
         eval_params['adj_reconst'], eval_params['x_input'], eval_params['y_cf'], eval_params['y_cf_pred'], \
         eval_params['metrics'], eval_params['device']
 
+    num_node_real = eval_params['num_node_real']
+
     if 'validity' in metrics:
         score_valid = evaluate_validity(y_cf, y_cf_pred, device)
         eval_results['validity'] = score_valid.item()
     if 'proximity' in metrics:
-        score_proximity = evaluate_proximity(adj_input, adj_reconst)
+        score_proximity = evaluate_proximity(adj_input, adj_reconst, num_node_real)
         eval_results['proximity'] = score_proximity.item()
 
     return eval_results
@@ -26,6 +28,13 @@ def evaluate_validity(y_cf, y_cf_pred, device):
     return score_valid
 
 
-def evaluate_proximity(adj_input, adj_reconst):
-    score_proximity = (adj_input == adj_reconst).float().mean()
-    return score_proximity
+def evaluate_proximity(adj_input, adj_reconst, num_node_real):
+    score_proximity = 0
+    batch_size = adj_input.shape[0]
+    for i in range(batch_size):
+        j = num_node_real[i]
+        adj_in = adj_input[i, 0:j, 0:j]
+        adj_re = adj_reconst[i, 0:j, 0:j]
+        score_proximity = score_proximity + (adj_in == adj_re).float().mean()
+
+    return score_proximity/batch_size

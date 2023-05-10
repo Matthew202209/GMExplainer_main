@@ -31,7 +31,7 @@ def init_prediction_args():
     return args
 
 
-def get_args_for_gcf_gan():
+def init_args_gcf_gan():
     parser = argparse.ArgumentParser()
     # device setting
     parser.add_argument('--device', type=str, default="cuda:0")
@@ -39,10 +39,10 @@ def get_args_for_gcf_gan():
     parser.add_argument('--data_path', type=str, default=r'D:\ProjectCodes\GMExplainer\data')
     parser.add_argument('--task_type', type=str, default=r'graph_classification')
     parser.add_argument('--data_type', type=str, default=r'causal')
-    parser.add_argument('--dataset_name', type=str, default=r'imdb_m')
+    parser.add_argument('--dataset_name', type=str, default=r'ogng_molhiv')
     parser.add_argument('--used_dataset', type=str, default=r'CausalDataset')
     # training setting
-    parser.add_argument('--batch_size', type=int, default=128)
+    parser.add_argument('--batch_size', type=int, default=512)
     parser.add_argument('--encode_h_dim', type=int, default=32)
     parser.add_argument('--num_epoches_lr_decay', type=int, default=1000)
     parser.add_argument('--lr_update_step', type=int, default=100)
@@ -53,7 +53,7 @@ def get_args_for_gcf_gan():
     parser.add_argument('--opt', type=str, default='RMSprop')
 
     # discriminator setting
-    parser.add_argument('--epoches', type=int, default=15000)
+    parser.add_argument('--epoches', type=int, default=10000)
     parser.add_argument('--d_train_t', type=int, default=1)
     parser.add_argument('--d_dropout', type=float, default=0.4)
     parser.add_argument('--d_lr', type=float, default=0.001)
@@ -61,20 +61,19 @@ def get_args_for_gcf_gan():
 
     parser.add_argument('--d_graph_pool_type', type=str, default='mean')
     # generator setting
-    parser.add_argument('--pretrain_epoch', type=int, default=8000)
-    parser.add_argument('--train_dis_epoch', type=int, default=10000)
+    parser.add_argument('--pretrain_epoch', type=int, default=3)
+    parser.add_argument('--train_dis_epoch', type=int, default=4)
     parser.add_argument('--z_dim', type=int, default=8)
     parser.add_argument('--n_critic', type=int, default=3)
     parser.add_argument('--conv_dims', default=[64, 128])
-    parser.add_argument('--g_dropout', type=float, default=0.4)
-    parser.add_argument('--g_lr', type=float, default=0.005)
-    parser.add_argument('--lamda_dis', type=float, default=0.5)
+    parser.add_argument('--g_dropout', type=float, default=0.2)
+    parser.add_argument('--g_lr', type=float, default=0.001)
+    parser.add_argument('--lamda_cf', type=float, default=10)
     parser.add_argument('--g_graph_pool_type', type=str, default='mean')
     # prediction model setting
     parser.add_argument('--p_h_dim', type=int, default=32)
     parser.add_argument('--p_num_class', type=int, default=2)
     parser.add_argument('--prediction_model', type=str, default='graph_classification')
-    parser.add_argument('--dataset', type=str, default=r'imdb_m')
     parser.add_argument('--pred_model_path', type=str, default=r'D:\ProjectCodes\GMExplainer\models_save')
     # evaluation
     parser.add_argument('--val_epoch', type=int, default=100)
@@ -84,6 +83,79 @@ def get_args_for_gcf_gan():
     parser.add_argument('--expr', type=str, default=r'1')
     args = parser.parse_args()
     return args
+
+
+gcfgan_config_dict = {
+    'imdb_m':{
+        'task_type': r"graph_classification",
+        'data_type': r'causal',
+        'dataset_name': r'imdb_m',
+        'used_dataset': r'CausalDataset',
+        # training setting
+        'batch_size': 256,
+        'num_class': 2,
+        'epoches': 10000,
+        # discriminator setting
+        'd_lr': 0.001,
+        # generator setting
+        'pretrain_epoch': 4000,
+        'train_dis_epoch': 6000,
+        'lamda_cf': 3,
+        'g_lr': 0.001,
+        # prediction model setting
+        'p_h_dim': 32,
+        'p_num_class': 2,
+        'prediction_model': 'graph_classification',
+        # save
+        'expr': 1},
+
+    'ogng_molhiv': {
+        'task_type': r"graph_classification",
+        'data_type': r'causal',
+        'dataset_name': r'ogng_molhiv',
+        'used_dataset': r'CausalDataset',
+        # training setting
+        'batch_size': 512,
+        'num_class': 2,
+        'epoches': 10000,
+        # discriminator setting
+        'd_lr': 0.001,
+        # generator setting
+        'pretrain_epoch': 4000,
+        'train_dis_epoch': 6000,
+        'g_lr': 0.001,
+        'lamda_cf': 15,
+        # prediction model setting
+        'p_h_dim': 32,
+        'p_num_class': 2,
+        'prediction_model': 'graph_classification',
+        # save
+        'expr': 1},
+
+    'Tox21_ahr': {
+        'task_type' :r"graph_classification",
+        'data_type' : r'realworld',
+       'dataset_name' : r'Tox21_ahr',
+        'used_dataset' :r'MolecularDataset',
+        # training setting
+        'batch_size': 64,
+        'num_class':2,
+        'epoches': 10000,
+        # discriminator setting
+        'd_lr': 0.001,
+        # generator setting
+        'pretrain_epoch': 4000,
+        'train_dis_epoch': 6000,
+        'g_lr': 0.001,
+        'lamda_cf': 10,
+        # prediction model setting
+        'p_h_dim': 32,
+        'p_num_class': 2,
+        'prediction_model': 'molecule_classification',
+        # save
+        'expr': 1}
+
+}
 
 
 class PredictionModelConfig:

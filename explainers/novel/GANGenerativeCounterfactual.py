@@ -23,9 +23,11 @@ from torch_geometric.nn.inits import glorot, zeros
 from torch_geometric.nn import DenseGCNConv, DenseGraphConv
 
 from Evaluation import evaluate
-from config import get_args_for_gcf_gan
+from config import init_args_gcf_gan
+from dataset.CausalDataset import CausalDataset
+from dataset.MolecularDataset import MolecularDataset
 from predictionModels.PredictionModelBuilder import build_prediction_model
-from utils.LoadData import get_data_path, load_data, select_dataloader, create_experiment
+from utils.LoadData import get_data_path, load_data, select_dataloader, create_experiment, select_molecular_dataloader
 from utils.Optimiser import creat_optimizer
 
 torch.set_default_tensor_type(torch.DoubleTensor)
@@ -56,6 +58,7 @@ class GCFGAN(object):
         # self.model_save_dir = self.args.model_save_dir
 
     def get_prediction(self):
+        self.pred_model.eval()
         if self.pred_model is None:
             print(r'No prediction model!')
         else:
@@ -78,20 +81,30 @@ class GCFGAN(object):
     # 创建data_loader
 
     def create_data_loader(self, index_dict):
-        _package_ = __import__("dataset.{}".format(self.args.used_dataset), fromlist=[self.args.used_dataset])
-        dataset = getattr(_package_, self.args.used_dataset)
-        for mode in ['train', 'val', 'test']:
-            data_idx = index_dict[mode]
-            if mode == 'train':
-                self.dataloader['train'] = select_dataloader(self.all_data, data_idx, dataset,
-                                                             batch_size=self.args.batch_size,
-                                                             num_workers=0, padded=False)
-            elif mode == 'val':
-                self.dataloader['val'] = select_dataloader(self.all_data, data_idx, dataset, batch_size=len(data_idx),
-                                                           num_workers=0, padded=False)
-            elif mode == 'test':
-                self.dataloader['test'] = select_dataloader(self.all_data, data_idx, dataset, batch_size=len(data_idx),
-                                                            num_workers=0, padded=False)
+        train_idx, val_idx, test_idx = index_dict['train'], index_dict['val'], index_dict['test']
+        val_batch_size = len(val_idx)
+        test_batch_size = len(test_idx)
+
+        if self.args.dataset_name == 'Tox21_ahr':
+            self.dataloader['train'] = select_molecular_dataloader(self.all_data, train_idx, MolecularDataset,
+                                                                   batch_size=self.args.batch_size,
+                                                                   num_workers=0)
+            self.dataloader['val'] = select_molecular_dataloader(self.all_data, val_idx, MolecularDataset,
+                                                                 batch_size=val_batch_size,
+                                                                 num_workers=0)
+            self.dataloader['test'] = select_molecular_dataloader(self.all_data, test_idx, MolecularDataset,
+                                                                  batch_size=test_batch_size,
+                                                                  num_workers=0)
+        elif self.args.dataset_name == 'ogng_molhiv' or self.args.dataset_name == 'imdb_m':
+            self.dataloader['train'] = select_dataloader(self.all_data, train_idx, CausalDataset,
+                                                         batch_size=self.args.batch_size,
+                                                         num_workers=0)
+            self.dataloader['val'] = select_dataloader(self.all_data, val_idx, CausalDataset,
+                                                       batch_size=val_batch_size,
+                                                       num_workers=0)
+            self.dataloader['test'] = select_dataloader(self.all_data, test_idx, CausalDataset,
+                                                        batch_size=test_batch_size,
+                                                        num_workers=0)
 
     def build_model(self):
         x_dim = self.all_data["features_list"][0].shape[1]
@@ -118,7 +131,7 @@ class GCFGAN(object):
 
     def train(self):
         global d_loss_real, d_loss_fake, d_loss, g_loss_cfe, g_loss, \
-            g_dis_loss, adj, x, adj_reconst, orin_index, g_loss_fake_ture, p_y_cf_label
+            g_dis_loss, adj, x, adj_reconst, orin_index, g_loss_fake_ture, p_y_cf_label, num_node_real
         data_loader = self.dataloader['train']
         best_validity = -1
         print('Start training...')
@@ -126,18 +139,23 @@ class GCFGAN(object):
         time_begin = time.time()
         best_loss = 1000000000000
         for epoch in tqdm(range(self.args.epoches)):
+            if (epoch + 1) == self.args.pretrain_epoch:
+                print('Finished Pretraining')
+                print('Start CF Training......')
             self.D.train()
             self.G.train()
             self.pred_model.eval()
+            #
             # =================================================================================== #
             #                             1. Prepare data                                         #
             # =================================================================================== #
 
             for i, element in enumerate(data_loader):
-                adj, x, orin_index = element['adj'], element['features'], element['index']
+                adj, x, num_node_real, orin_index = element['adj'], element['features'], \
+                    element['num_node_real'], element['index']
                 adj = adj.to(self.device)
                 x = x.to(self.device)
-                orin_index = orin_index.to(self.device)
+                num_node_real = num_node_real.to(self.device)
                 p_y_label = self.pred_y[orin_index]
                 # 创建标签
                 p_y_label = self.label2onehot(p_y_label, self.args.num_class)
@@ -181,6 +199,7 @@ class GCFGAN(object):
                 # =================================================================================== #
 
                 if (i + 1) % self.args.n_critic == 0:
+
                     if (epoch + 1) < self.args.pretrain_epoch:
                         z = self.sample_z(self.args.batch_size)
                         adj_reconst = self.G(adj, x, z, p_y_cf_label)
@@ -192,9 +211,7 @@ class GCFGAN(object):
                         else:
                             self.G.progress['G/g_loss'] += [g_loss.item()]
                     else:
-                        if (epoch + 1) == self.args.pretrain_epoch:
-                            print('Finished Pretraining')
-                            print('Start CF Training......')
+
                         z = self.sample_z(self.args.batch_size)
                         adj_reconst = self.G(adj, x, z, p_y_cf_label)
                         # 假样本预测结果
@@ -218,7 +235,7 @@ class GCFGAN(object):
                             else:
                                 self.G.progress['G/dis_loss'] += [g_dis_loss.item()]
                         else:
-                            g_loss = loss_cf + g_dis_loss + g_loss_fake_ture
+                            g_loss = self.args.lamda_cf * loss_cf + g_dis_loss + g_loss_fake_ture
                             if 'G/loss_cf' not in self.G.progress.keys():
                                 self.G.progress['G/loss_cf'] = []
                                 self.G.progress['G/loss_cf'] += [loss_cf.item()]
@@ -240,7 +257,7 @@ class GCFGAN(object):
                 with torch.no_grad():
                     y_cf_pred = self.pred_model(x, c_adj)['y_pred']
                 eval_params = {'pred_model': self.pred_model, 'adj_input': adj, 'x_input': x, 'adj_reconst': c_adj,
-                               'y_cf': y_cf, 'y_cf_pred': y_cf_pred,
+                               'y_cf': y_cf, 'y_cf_pred': y_cf_pred, 'num_node_real': num_node_real,
                                'metrics': self.args.metrics, 'device': self.args.device}
                 train_eval_results = evaluate(eval_params)
                 train_eval_results.update({'D/d_loss': self.D.progress['D/loss_total'][-1]})
@@ -265,9 +282,9 @@ class GCFGAN(object):
 
                 total_loss = val_eval_results['total_loss']
                 if (epoch + 1) >= self.args.train_dis_epoch:
-                    save_dir = r'{}/{}-expr{}'.format(self.args.model_save_dir,
-                                                       self.args.dataset_name,
-                                                       self.args.expr)
+                    save_dir = r'{}/gcfgan/{}-expr{}'.format(self.args.model_save_dir,
+                                                             self.args.dataset_name,
+                                                             str(self.args.expr))
 
                     if not os.path.exists(save_dir):
                         os.makedirs(save_dir)
@@ -289,7 +306,7 @@ class GCFGAN(object):
                 self.update_lr()
                 print('Decayed learning rates, g_lr: {}, d_lr: {}.'.format(self.G.g_lr, self.D.d_lr))
 
-    def evaluation(self, mode= f'val'):
+    def evaluation(self, mode=f'val'):
         # 调整模型状态
         self.D.eval()
         self.G.eval()
@@ -298,9 +315,11 @@ class GCFGAN(object):
         data_loader = self.dataloader[mode]
         with torch.no_grad():
             for i, element in enumerate(data_loader):
-                adj, x, orin_index = element['adj'], element['features'], element['index']
+                adj, x, num_node_real, orin_index = element['adj'], element['features'], \
+                    element['num_node_real'], element['index']
                 adj = adj.to(self.device)
                 x = x.to(self.device)
+                num_node_real = num_node_real.to(self.device)
                 # 得到反事实标签
                 batch_size = adj.shape[0]
                 p_y_label = self.pred_y[orin_index]
@@ -336,7 +355,7 @@ class GCFGAN(object):
 
                 # 计算评价指标
                 eval_params = {'pred_model': self.pred_model, 'adj_input': adj, 'x_input': x, 'adj_reconst': c_adj,
-                               'y_cf': y_cf, 'y_cf_pred': y_cf_pred,
+                               'y_cf': y_cf, 'y_cf_pred': y_cf_pred, 'num_node_real': num_node_real,
                                'metrics': self.args.metrics, 'device': self.args.device}
 
                 eval_results = evaluate(eval_params)
@@ -344,7 +363,7 @@ class GCFGAN(object):
 
                 p = mode + ':  '
                 for k in eval_results_all.keys():
-                    p =  p + f"{k}: {eval_results_all[k]:.4f} | "
+                    p = p + f"{k}: {eval_results_all[k]:.4f} | "
                 print(p)
 
         return eval_results_all
@@ -354,6 +373,7 @@ class GCFGAN(object):
         self.build_model()
         self.get_prediction()
         self.train()
+        self.save_log()
 
     def sample_z(self, batch_size):
 
@@ -552,7 +572,7 @@ def distance_graph_prob(adj_1, adj_2_prob):
 
 if __name__ == '__main__':
     num_expr = 10
-    args = get_args_for_gcf_gan()
+    args = init_args_gcf_gan()
     data_path = get_data_path(args)
     data = load_data(data_path)
     num_data = len(data['adj_list'])
@@ -563,5 +583,3 @@ if __name__ == '__main__':
                       'test': idx_test_list[expr]}
         solver = GCFGAN(args, data)
         solver.run(index_dict)
-
-
