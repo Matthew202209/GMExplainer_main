@@ -33,7 +33,7 @@ from predictionModels.PredictionModelBuilder import build_prediction_model
 from utils.LoadData import get_data_path, load_data, select_dataloader, create_experiment, select_molecular_dataloader
 from utils.Optimiser import creat_optimizer
 
-torch.set_default_tensor_type(torch.DoubleTensor)
+# torch.set_default_tensor_type(torch.DoubleTensor)
 
 
 class GCFGAN(object):
@@ -116,7 +116,7 @@ class GCFGAN(object):
         max_num_nodes = self.all_data["adj_list"][0].shape[1]
         # 创建判别器和构造器
         self.setup_seed()
-        self.D = Discriminator(self.args, x_dim)
+        self.D = Discriminator(self.args, x_dim, max_num_nodes)
         self.setup_seed()
         self.G = Generator(self.args, max_num_nodes, x_dim)
 
@@ -277,7 +277,7 @@ class GCFGAN(object):
                 c_adj = torch.bernoulli(adj_reconst)
                 with torch.no_grad():
                     y_cf_pred = self.pred_model(x, c_adj)['y_pred']
-                eval_params = {'pred_model': self.pred_model, 'adj_input': adj, 'x_input': x, 'adj_reconst': c_adj,
+                eval_params = {'adj_input': adj, 'x_input': x, 'adj_reconst': c_adj,
                                'y_cf': y_cf, 'y_cf_pred': y_cf_pred, 'num_node_real': num_node_real,
                                'metrics': self.args.metrics, 'device': self.args.device}
                 train_eval_results = evaluate(eval_params)
@@ -302,6 +302,7 @@ class GCFGAN(object):
                 test_eval_results = self.evaluation(mode=f'test')
 
                 total_loss = val_eval_results['total_loss']
+
                 if (epoch + 1) >= self.args.train_dis_epoch:
                     save_dir = r'{}/gcfgan/{}-expr{}'.format(self.args.model_save_dir,
                                                              self.args.dataset_name,
@@ -465,8 +466,9 @@ class GCFGAN(object):
 
 
 class Discriminator(nn.Module):
-    def __init__(self, args, x_dim):
+    def __init__(self, args, x_dim, max_num_nodes):
         super(Discriminator, self).__init__()
+        self.max_num_nodes = max_num_nodes
 
         # 参数设置
         self.encode_x_dim = x_dim
@@ -487,9 +489,11 @@ class Discriminator(nn.Module):
         if self.encoder_type == 'gcn':
             self.graph_model = DenseGCNConv(self.encode_x_dim, self.encode_h_dim)
         elif self.encoder_type == 'graphConv':
-            self.graph_model = DenseGraphConv(self.encode_x_dim, self.encode_h_dim)
+            self.graph_model = nn.ModuleList([DenseGraphConv(x_dim, self.encode_h_dim) for i in range(3)])
 
         self.label_encoder = nn.Linear(self.num_class, 16)
+        self.graph_encoder = nn.Sequential(nn.Linear(2 * self.encode_h_dim,
+                                                     self.encode_h_dim), nn.BatchNorm1d(self.encode_h_dim), nn.ReLU())
 
         self.linear_layer = nn.Sequential(
             nn.Linear(self.encode_h_dim + 16, 256),
@@ -506,10 +510,19 @@ class Discriminator(nn.Module):
         self.optimizer = creat_optimizer(self.parameters(), opt=args.opt, lr=self.d_lr)
 
     def forward(self, adj, features, one_hot_label):
-        graph_rep = self.graph_model(features, adj)  # n x num_node x h_dim
-        graph_rep = graph_pooling(graph_rep, self.graph_pool_type)
+        rep_graphs = []
+        for i in range(3):
+            rep = self.graph_model[i](features, adj)  # n x num_node x h_dim
+            graph_rep = torch.cat(
+                [graph_pooling(rep, 'mean', max_num_node=self.max_num_nodes),
+                 graph_pooling(rep, 'max', max_num_node=self.max_num_nodes)], dim=-1)
+            graph_rep = self.graph_encoder(graph_rep)  # n x h_dim
+            rep_graphs.append(graph_rep.unsqueeze(0))  # [1 x n x h_dim]
+
+        rep_graph_agg = torch.cat(rep_graphs, dim=0)
+        rep_graph_agg = torch.mean(rep_graph_agg, dim=0)
         encode_label = self.label_encoder(one_hot_label)
-        in_put = torch.cat([graph_rep, encode_label], dim=-1)
+        in_put = torch.cat([rep_graph_agg, encode_label], dim=-1)
 
         output = self.linear_layer(in_put)
         return output
@@ -540,9 +553,11 @@ class Generator(nn.Module):
         if self.encoder_type == 'gcn':
             self.graph_model = DenseGCNConv(self.encode_x_dim, self.encode_h_dim)
         elif self.encoder_type == 'graphConv':
-            self.graph_model = DenseGraphConv(self.encode_x_dim, self.encode_h_dim)
+            self.graph_model = nn.ModuleList([DenseGraphConv(x_dim, self.encode_h_dim) for i in range(3)])
 
         self.label_encoder = nn.Linear(self.num_class, 32)
+        self.graph_encoder = nn.Sequential(nn.Linear(2 * self.encode_h_dim,
+                                                     self.encode_h_dim), nn.BatchNorm1d(self.encode_h_dim), nn.ReLU())
 
         layers = []
         for c0, c1 in zip([self.z_dim + self.encode_h_dim + 32] + self.conv_dims[:-1], self.conv_dims):
@@ -559,13 +574,25 @@ class Generator(nn.Module):
         self.optimizer = creat_optimizer(self.parameters(), opt=args.opt, lr=self.g_lr)
 
     def forward(self, adj, features, z, cf_label):
+        # mask = torch.zeros(self.max_num_nodes).to(device)
+        # mask = self.mask.unsqueeze(0).repeat(len(x), 1)  # max_num
         # encode label
         encode_label = self.label_encoder(cf_label)
+        mask = None
         # graph rep
-        rep = self.graph_model(features, adj)  # n x num_node x h_dim
-        graph_rep = graph_pooling(rep, self.graph_pool_type)
+        rep_graphs = []
+        for i in range(3):
+            rep = self.graph_model[i](features, adj)  # n x num_node x h_dim
+            graph_rep = torch.cat(
+                [graph_pooling(rep, 'mean', max_num_node=self.max_num_nodes),
+                 graph_pooling(rep, 'max', max_num_node=self.max_num_nodes)], dim=-1)
+            graph_rep = self.graph_encoder(graph_rep)  # n x h_dim
+            rep_graphs.append(graph_rep.unsqueeze(0))  # [1 x n x h_dim]
 
-        in_put = torch.cat([z, graph_rep, encode_label], dim=-1)
+        rep_graph_agg = torch.cat(rep_graphs, dim=0)
+        rep_graph_agg = torch.mean(rep_graph_agg, dim=0)
+
+        in_put = torch.cat([z, rep_graph_agg, encode_label], dim=-1)
         out_put = self.layers(in_put)
         adj_logits = self.edges_layer(out_put).view(-1, self.max_num_nodes, self.max_num_nodes)
 
@@ -600,14 +627,14 @@ class Generator(nn.Module):
         return [delistify(e) for e in softmax]
 
 
-def graph_pooling(x, _type='mean'):
+def graph_pooling(x, _type='mean', max_num_node=1):
     global out
     if _type == 'max':
         out, _ = torch.max(x, dim=1, keepdim=False)
     elif _type == 'sum':
         out = torch.sum(x, dim=1, keepdim=False)
     elif _type == 'mean':
-        out = torch.sum(x, dim=1, keepdim=False)
+        out = torch.sum(x, dim=1, keepdim=False)/max_num_node
     return out
 
 

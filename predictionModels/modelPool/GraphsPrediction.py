@@ -96,6 +96,8 @@ class GraphPredModel(nn.Module):
         return out
 
     def forward(self, x, adj):
+        # mask = torch.zeros(self.max_num_nodes).to(device)
+        # mask = self.mask.unsqueeze(0).repeat(len(x), 1)  # max_num
         if self.dataset == 'synthetic' or self.dataset == 'community' or self.dataset == 'imdb_b':
             x = torch.ones_like(x).to(self.device)
         elif self.dataset == 'ogng_molhiv':

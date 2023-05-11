@@ -30,6 +30,58 @@ def init_prediction_args():
     args = parser.parse_args()
     return args
 
+def init_args_clear():
+    parser = argparse.ArgumentParser(description='Graph counterfactual explanation generation')
+    # set device
+    parser.add_argument('--device', type=str, default="cuda:0")
+    # data loading
+    parser.add_argument('--data_path', type=str, default=r'D:\ProjectCodes\GMExplainer\data')
+    parser.add_argument('--task_type', type=str, default=r'graph_classification')
+    parser.add_argument('--data_type', type=str, default=r'causal')
+    parser.add_argument('--dataset_name', type=str, default=r'imdb_m')
+    parser.add_argument('--used_dataset', type=str, default=r'CausalDataset')
+
+    # prediction_model
+    parser.add_argument('--p_h_dim', type=int, default=32)
+    parser.add_argument('--p_num_class', type=int, default=2)
+    parser.add_argument('--prediction_model', type=str, default='graph_classification')
+    parser.add_argument('--pred_model_path', type=str, default=r'D:\ProjectCodes\GMExplainer\models_save')
+    parser.add_argument('--num_class', type=int, default=2)
+    parser.add_argument('--batch_size', type=int, default=126, metavar='N',
+                        help='input batch size for training (default: 500)')  # community: 500， ogbg: 5000
+    parser.add_argument('--num_workers', type=int, default=0, metavar='N')
+    parser.add_argument('--epochs', type=int, default=5000, metavar='N',
+                        help='number of epochs to train (default: 100)')
+    parser.add_argument('--seed', type=int, default=1, metavar='S',
+                        help='random seed (default: 1)')
+
+    parser.add_argument('--trn_rate', type=float, default=0.6, help='training data ratio')
+    parser.add_argument('--tst_rate', type=float, default=0.2, help='test data ratio')
+
+    parser.add_argument('--disable_u', type=bool, default=True, help='test data ratio')
+    parser.add_argument('--dim_z', type=int, default=16)
+    parser.add_argument('--dim_h', type=int, default=16, metavar='N', help='dimension of h')
+
+    parser.add_argument('--dropout', type=float, default=0.1)
+    parser.add_argument('--alpha', type=float, default=5)
+
+    parser.add_argument('--lr', type=float, default=1e-3,
+                        help='learning rate for optimizer')  # community: 1e-3
+    parser.add_argument('--weight_decay', type=float, default=1e-5,
+                        help='weight decay')
+    parser.add_argument('--metrics', default=['validity', 'proximity'])
+
+    # expr
+    # save
+    parser.add_argument('--save_model', type=bool, default=True)
+    parser.add_argument('--model_save_dir', type=str, default=r'D:\ProjectCodes\GMExplainer\models_save\explanation')
+    parser.add_argument('--log_save_dir', type=str, default=r'D:\ProjectCodes\GMExplainer\logs')
+    parser.add_argument('--results_save_dir', type=str, default=r'D:\ProjectCodes\GMExplainer\results')
+    parser.add_argument('--expr', type=int, default=0)
+
+    args = parser.parse_args()
+    return args
+
 
 def init_args_gcf_gan():
     parser = argparse.ArgumentParser()
@@ -82,7 +134,7 @@ def init_args_gcf_gan():
     parser.add_argument('--model_save_dir', type=str, default=r'D:\ProjectCodes\GMExplainer\models_save\explanation')
     parser.add_argument('--log_save_dir', type=str, default=r'D:\ProjectCodes\GMExplainer\logs')
     parser.add_argument('--results_save_dir', type=str, default=r'D:\ProjectCodes\GMExplainer\results')
-    parser.add_argument('--expr', type=str, default=r'1')
+    parser.add_argument('--expr', type=int, default=0)
     args = parser.parse_args()
     return args
 
@@ -102,7 +154,7 @@ gcfgan_config_dict = {
         # generator setting
         'pretrain_epoch': 4000,
         'train_dis_epoch': 8000,
-        'lamda_cf': 3,
+        'lamda_cf': 1,
         'g_lr': 0.001,
         # prediction model setting
         'p_h_dim': 32,

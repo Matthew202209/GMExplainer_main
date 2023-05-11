@@ -31,8 +31,15 @@ def select_dataloader(data, idx_select, DataSet, batch_size=500, num_workers=0, 
     labels = get_items_from_list(data['labels'], idx_select)
     num_node_real = get_items_from_list(data['num_node_real'], idx_select)
     max_num_node = data['max_num_node']
+
+    adj = torch.tensor(adj, dtype=torch.float32)
+    features = torch.tensor(features, dtype=torch.float32)
+    u = torch.tensor(u, dtype=torch.float32)
+    labels = torch.tensor(labels, dtype=torch.float32)
+    num_node_real = torch.tensor(num_node_real, dtype=torch.float32)
+
     dataset_select = DataSet(adj, features,
-                             u, labels, num_node_real, max_num_node ,idx_select,
+                             u, labels, num_node_real, max_num_node,idx_select,
                              padded)
     data_loader_select = torch.utils.data.DataLoader(
         dataset_select,
@@ -46,6 +53,10 @@ def select_molecular_dataloader(data, idx_select, DataSet, batch_size=500, num_w
     features = get_items_from_list(data['features_list'], idx_select)
     labels = get_items_from_list(data['label_list'], idx_select)
     max_node_num = data['max_node_num']
+    adj = torch.tensor(adj, dtype=torch.float32)
+    features = torch.tensor(features, dtype=torch.float32)
+    labels = torch.tensor(labels, dtype=torch.float32)
+
     dataset_select = DataSet(adj, features,
                              labels, idx_select,
                              max_node_num)

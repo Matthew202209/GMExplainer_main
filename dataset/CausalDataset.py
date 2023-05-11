@@ -21,10 +21,10 @@ class CausalDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, idx):
         adj = self.adj_all[idx]
-        return {'adj': adj.copy(),
-                'features': self.feature_all[idx].copy(),
-                'labels': self.labels_all[idx].copy(),
-                'u': self.u_all[idx].copy(),
+        return {'adj': adj,
+                'features': self.feature_all[idx],
+                'labels': self.labels_all[idx],
+                'u': self.u_all[idx],
                 'max_num_node': self.max_num_nodes,
                 'num_node_real': self.num_node_real[idx],
                 'index': self.index[idx]

@@ -4,7 +4,7 @@ from torch.nn import functional as F
 
 def evaluate(eval_params):
     eval_results = {}
-    pred_model, adj_input, adj_reconst, x, y_cf, y_cf_pred, metrics, device = eval_params['pred_model'], eval_params['adj_input'], \
+    adj_input, adj_reconst, x, y_cf, y_cf_pred, metrics, device = eval_params['adj_input'], \
         eval_params['adj_reconst'], eval_params['x_input'], eval_params['y_cf'], eval_params['y_cf_pred'], \
         eval_params['metrics'], eval_params['device']
 
@@ -32,7 +32,7 @@ def evaluate_proximity(adj_input, adj_reconst, num_node_real):
     score_proximity = 0
     batch_size = adj_input.shape[0]
     for i in range(batch_size):
-        j = num_node_real[i]
+        j = int(num_node_real[i])
         adj_in = adj_input[i, 0:j, 0:j]
         adj_re = adj_reconst[i, 0:j, 0:j]
         score_proximity = score_proximity + (adj_in == adj_re).float().mean()

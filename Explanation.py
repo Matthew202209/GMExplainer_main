@@ -1,6 +1,9 @@
 import pickle
 
-from config import init_args_gcf_gan, gcfgan_config_dict
+import torch
+
+from config import init_args_gcf_gan, gcfgan_config_dict, init_args_clear
+from explainers.counterfactual.CLEAR import CLEAR
 from explainers.novel.GANGenerativeCounterfactual import GCFGAN
 from utils.LoadData import get_data_path, load_data
 
@@ -66,10 +69,20 @@ def run_train_explainer(explainer, dataset_name, expr=0):
         explainer = GCFGAN(args, data)
         explainer.run(index_dict)
 
+    elif explainer == 'clear':
+        args = init_args_clear()
+        args.expr = expr
+        index_dict = get_experiment(args, args.expr)
+        data_path = get_data_path(args)
+        data = load_data(data_path)
+        explainer = CLEAR(args, data)
+        explainer.run(index_dict)
+
 
 if __name__ == '__main__':
     explainers = ['gcfgan']
-    run_train_explainer(explainer='gcfgan', dataset_name='Tox21_ahr')
+    # run_train_explainer(explainer='gcfgan', dataset_name='imdb_m')
+    run_train_explainer(explainer='clear', dataset_name='imdb_m')
 
 
 
